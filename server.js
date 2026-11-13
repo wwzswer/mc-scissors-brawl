@@ -195,7 +195,8 @@ async function handleRequest(req, res){
         slots[0] = {kind:'human', id, name:(b.name||'玩家').slice(0,10), team:0, ready:false};
         const r = {code, hostId:id, mode:b.mode==='2v2'?'2v2':'1v1',
           apPerWin:b.apPerWin===1?1:2, diff:b.diff||'normal', started:false, seed:null,
-          slots, seq:0, log:[], turnId:null, snapshot:null, snapshotAt:0, touched:now()};
+          slots, seq:0, log:[], turnId:null, snapshot:null, snapshotAt:0,
+          state:null, stateSeq:0, touched:now()};
         rooms.set(code, r);
         console.log(`[房间] 创建 ${code}（房主 ${slots[0].name}，模式 ${r.mode}）`);
         return json(res, {ok:true, code, youId:id, room:roomView(r, id)});
@@ -249,10 +250,22 @@ async function handleRequest(req, res){
           events:r.log.filter(e=>e.seq>since),
           slots: roomView(r, id || null).slots,
           seats: humans(r).map(s=>({id:s.id, name:s.name, team:s.team})),
-          snapshot: r.snapshot || null});
+          snapshot: r.snapshot || null,
+          stateSeq: r.stateSeq || 0});
       }
       if(mySlotIdx < 0 && !['events'].includes(sub)) return json(res, {ok:false, err:'你不在该房间中'}, 403);
 
+      /* 联机对局：房主把整份局面推上来，其他端拉下来渲染 */
+      if(sub === 'state' && req.method === 'POST'){
+        r.state = body.state || null;
+        r.stateSeq = Number(body.seq) || (r.stateSeq || 0) + 1;
+        r.touched = now();
+        return json(res, {ok:true, seq:r.stateSeq});
+      }
+      if(sub === 'state' && req.method === 'GET'){
+        r.touched = now();
+        return json(res, {ok:true, seq:r.stateSeq || 0, state:r.state || null});
+      }
       if(sub === 'snapshot' && req.method === 'POST'){
         r.snapshot = body.snap || null;
         r.snapshotAt = now();
@@ -339,6 +352,7 @@ async function handleRequest(req, res){
         if(seats.length < 2) return json(res, {ok:false, err:'至少要有 2 个人（可以加人机）'}, 400);
         if(teamCount(r) < 2) return json(res, {ok:false, err:'至少要有 2 个队伍才有对手'}, 400);
         r.started = true;
+        r.state = null; r.stateSeq = 0;
         r.seed = Number(body.seed) || ((()=>{ let h=2166136261;
           for(const ch of String(r.code)){ h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
           return (h>>>0)||1; })());

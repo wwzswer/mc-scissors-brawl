@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色主题：状态栏/导航栏同色，禁掉系统栏透明，避免内容和系统栏叠在一起 -->
+    <style name="AppTheme" parent="@android:style/Theme.NoTitleBar">
+        <item name="android:windowBackground">#0e1116</item>
+        <item name="android:colorBackground">#0e1116</item>
+        <item name="android:statusBarColor">#0e1116</item>
+        <item name="android:navigationBarColor">#0e1116</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">default</item>
+    </style>
+</resources>

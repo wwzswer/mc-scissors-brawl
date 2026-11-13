@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.dsh.mcbrawl"
-    android:versionCode="1700"
-    android:versionName="1.7.0">
+    android:versionCode="10701"
+    android:versionName="1.7.1">
 
-    <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="35" />
+    <!-- 目标 SDK 34：Android 15/16 只对 targetSdk>=35 的 App 强制 edge-to-edge，
+         用手动 WindowInsets 处理系统栏，兼容性更稳 -->
+    <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
@@ -12,7 +14,7 @@
         android:label="猜拳战场"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:theme="@android:style/Theme.NoTitleBar"
+        android:theme="@style/AppTheme"
         android:hardwareAccelerated="true"
         android:allowBackup="true"
         android:supportsRtl="true"
@@ -21,7 +23,8 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|uiMode|smallestScreenSize"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode|density|fontScale|locale|layoutDirection"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

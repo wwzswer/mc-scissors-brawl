@@ -4,11 +4,16 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowInsets;
 import android.webkit.GeolocationPermissions;
 import android.webkit.JsPromptResult;
 import android.webkit.JsResult;
@@ -19,29 +24,51 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.TextView;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Locale;
 
 /**
- * 方块猜拳战场 · 手机壳
- * 把整个网页当成 App 跑：资源全部打包进 assets/www，用虚拟域名 https://mcbrawl.local
- * 加载，这样 localStorage / 相对路径 / 图片都跟浏览器里一模一样。
- * 联机：网页里「服务器地址」填电脑的 http://192.168.x.x:8787 即可（需要 INTERNET 权限）。
+ * 方块猜拳战场 · 手机壳（WebView + assets/www）
+ *
+ * 兼容性要点（都是真机踩出来的）：
+ *  · 目标 SDK 压到 34：Android 15/16 只对 target=35+ 的 App 强制 edge-to-edge，
+ *    否则状态栏/手势条会盖住游戏界面。
+ *  · 仍然手动处理 WindowInsets，把系统栏、刘海、输入法的高度让出来（兜底）。
+ *  · 深色窗口背景 + 启动占位，避免启动时白屏闪一下。
+ *  · 关闭系统"强制深色 / 算法深色"，否则 iQOO/OriginOS 会把配色改掉。
+ *  · setTextZoom(100)：系统字体放大不再把游戏文字撑变形。
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGIN = "https://mcbrawl.local";
     private WebView web;
+    private FrameLayout root;
+    private View splash;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        /* 窗口底色先铺满，避免启动白屏 */
+        Window w = getWindow();
+        w.setBackgroundDrawable(new ColorDrawable(0xFF0E1116));
+        if (Build.VERSION.SDK_INT >= 21) {
+            w.setStatusBarColor(0xFF0E1116);
+            w.setNavigationBarColor(0xFF0E1116);
+        }
+
+        root = new FrameLayout(this);
+        root.setBackgroundColor(0xFF0E1116);
+        root.setFitsSystemWindows(false);
+
         web = new WebView(this);
         web.setBackgroundColor(Color.parseColor("#0e1116"));
         web.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        web.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -51,15 +78,28 @@ public class MainActivity extends Activity {
         s.setSupportZoom(false);
         s.setBuiltInZoomControls(false);
         s.setDisplayZoomControls(false);
-        s.setUseWideViewPort(false);
+        s.setUseWideViewPort(false);      /* 布局宽度 = 屏幕宽度，走移动端 CSS */
         s.setLoadWithOverviewMode(false);
-        s.setTextZoom(100);
+        s.setTextZoom(100);               /* 系统字体放大不影响游戏排版 */
+        s.setJavaScriptCanOpenWindowsAutomatically(false);
+        s.setSupportMultipleWindows(false);
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setAllowFileAccess(false);
         s.setAllowContentAccess(false);
         if (Build.VERSION.SDK_INT >= 21) {
             s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         }
+        /* 不要让系统把深色配色反转（OriginOS / MIUI 的"强制深色"） */
+        try{
+            if (Build.VERSION.SDK_INT >= 29) {
+                s.setForceDark(WebSettings.FORCE_DARK_OFF);
+            }
+        }catch(Throwable ignored){}
+        try{
+            if (Build.VERSION.SDK_INT >= 33) {
+                s.setAlgorithmicDarkeningAllowed(false);
+            }
+        }catch(Throwable ignored){}
 
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -81,16 +121,22 @@ public class MainActivity extends Activity {
                 }
                 return null;
             }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                if (splash != null) {
+                    splash.setVisibility(View.GONE);
+                }
+            }
         });
 
-        /* 网页里的 alert / confirm / prompt 必须实现，否则「服务器地址」那类输入框会静默失败 */
         web.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onJsAlert(WebView v, String url, String message, final JsResult result) {
                 new AlertDialog.Builder(MainActivity.this)
                         .setMessage(message)
                         .setPositiveButton("好", new DialogInterface.OnClickListener() {
-                            public void onClick(DialogInterface d, int w) { result.confirm(); }
+                            public void onClick(DialogInterface d, int w2) { result.confirm(); }
                         })
                         .setOnCancelListener(new DialogInterface.OnCancelListener() {
                             public void onCancel(DialogInterface d) { result.cancel(); }
@@ -104,10 +150,10 @@ public class MainActivity extends Activity {
                 new AlertDialog.Builder(MainActivity.this)
                         .setMessage(message)
                         .setPositiveButton("确定", new DialogInterface.OnClickListener() {
-                            public void onClick(DialogInterface d, int w) { result.confirm(); }
+                            public void onClick(DialogInterface d, int w2) { result.confirm(); }
                         })
                         .setNegativeButton("取消", new DialogInterface.OnClickListener() {
-                            public void onClick(DialogInterface d, int w) { result.cancel(); }
+                            public void onClick(DialogInterface d, int w2) { result.cancel(); }
                         })
                         .setOnCancelListener(new DialogInterface.OnCancelListener() {
                             public void onCancel(DialogInterface d) { result.cancel(); }
@@ -126,12 +172,12 @@ public class MainActivity extends Activity {
                         .setMessage(message)
                         .setView(input)
                         .setPositiveButton("确定", new DialogInterface.OnClickListener() {
-                            public void onClick(DialogInterface d, int w) {
+                            public void onClick(DialogInterface d, int w2) {
                                 result.confirm(input.getText().toString());
                             }
                         })
                         .setNegativeButton("取消", new DialogInterface.OnClickListener() {
-                            public void onClick(DialogInterface d, int w) { result.cancel(); }
+                            public void onClick(DialogInterface d, int w2) { result.cancel(); }
                         })
                         .setOnCancelListener(new DialogInterface.OnCancelListener() {
                             public void onCancel(DialogInterface d) { result.cancel(); }
@@ -146,9 +192,55 @@ public class MainActivity extends Activity {
             }
         });
 
-        setContentView(web, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
+        /* 启动占位：深色底 + 一行字，页面加载完就撤掉 */
+        splash = buildSplash();
+        root.addView(web, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(splash, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        setContentView(root);
+
+        /* 系统栏 / 刘海 / 输入法内边距：内容和状态栏、手势条永远不重叠 */
+        root.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override
+            public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
+                int l = 0, t = 0, r = 0, b = 0;
+                if (Build.VERSION.SDK_INT >= 20) {
+                    l = insets.getSystemWindowInsetLeft();
+                    t = insets.getSystemWindowInsetTop();
+                    r = insets.getSystemWindowInsetRight();
+                    b = insets.getSystemWindowInsetBottom();
+                }
+                if (Build.VERSION.SDK_INT >= 28 && insets.getDisplayCutout() != null) {
+                    t = Math.max(t, insets.getDisplayCutout().getSafeInsetTop());
+                    b = Math.max(b, insets.getDisplayCutout().getSafeInsetBottom());
+                    l = Math.max(l, insets.getDisplayCutout().getSafeInsetLeft());
+                    r = Math.max(r, insets.getDisplayCutout().getSafeInsetRight());
+                }
+                web.setPadding(l, t, r, b);
+                if (splash != null) splash.setPadding(l, t, r, b);
+                return insets;
+            }
+        });
+
+        /* 方便真机排查：Chrome 打开 chrome://inspect 就能看到这个 WebView */
+        try{ WebView.setWebContentsDebuggingEnabled(true); }catch(Throwable ignored){}
+
         web.loadUrl(ORIGIN + "/index.html");
+    }
+
+    private View buildSplash() {
+        FrameLayout box = new FrameLayout(this);
+        box.setBackgroundColor(0xFF0E1116);
+        TextView tv = new TextView(this);
+        tv.setText("方块猜拳战场");
+        tv.setTextColor(0xFF6EE7A8);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.gravity = Gravity.CENTER;
+        box.addView(tv, lp);
+        return box;
     }
 
     @Override
@@ -171,6 +263,18 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (web != null) web.onResume();
+    }
+
+    @Override
+    protected void onDestroy() {
+        try{
+            if (web != null) {
+                web.loadUrl("about:blank");
+                web.destroy();
+                web = null;
+            }
+        }catch(Throwable ignored){}
+        super.onDestroy();
     }
 
     private static String mimeOf(String path) {

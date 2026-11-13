@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>net-sync-test</title>
+<style>body{background:#0b0f14;color:#e8ecf5;font:13px/1.7 Consolas,monospace;padding:12px}
+pre{white-space:pre-wrap}iframe{width:520px;height:340px;border:1px solid #333;vertical-align:top}</style></head>
+<body>
+<pre id="results">running…</pre>
+<iframe id="A" src="/index.html"></iframe>
+<iframe id="B" src="/index.html"></iframe>
+<script>
+const out=[]; let fails=0;
+const log=(ok,msg,extra)=>{ if(ok===null) out.push('… '+msg); else { if(!ok) fails++; out.push((ok?'OK  ':'XX  ')+msg+(extra!==undefined?'  '+JSON.stringify(extra):'')); } document.getElementById('results').textContent=out.join('\n'); };
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const errs = [];
+const hookErr = w => { try{ w.addEventListener('error', e=>errs.push('AERROR: '+e.message+' @'+(e.filename||'')+':'+e.lineno)); w.addEventListener('unhandledrejection', e=>errs.push('REJECT: '+(e.reason&&e.reason.message||e.reason))); }catch(e){} };
+const waitMCG=w=>new Promise(res=>{ const t=setInterval(()=>{ if(w&&w.MCGame){clearInterval(t);res(w.MCGame);} },50); setTimeout(()=>{clearInterval(t);res(null);},9000); });
+const snapOf = G => G ? JSON.stringify(G.players.map(p=>[p.name, p.hp, p.ap, p.prog, p.alive, p.team])) : 'null';
+
+window.addEventListener('load', async ()=>{
+  try{
+    const fA=document.getElementById('A'), fB=document.getElementById('B');
+    hookErr(fA.contentWindow); hookErr(fB.contentWindow);
+    const A=await waitMCG(fA.contentWindow), B=await waitMCG(fB.contentWindow);
+    if(!A||!B){ log(false,'页面未就绪'); throw new Error('no MCGame'); }
+    const WA=fA.contentWindow, WB=fB.contentWindow, NetA=A.__api.Net, NetB=B.__api.Net;
+    A.__api.setFastTiming();
+    A.__api.setInstantRps();
+    A.__api.setAutoPlayer((p,opts)=>{
+      const o=opts||[];
+      return o.find(x=>x.type==='attack')||o.find(x=>x.type==='shop_progress')
+          ||o.find(x=>x.type==='craftShopItem')||o.find(x=>x.type==='move')||{type:'pass'};
+    });
+
+    /* 建房 + 加入 */
+    /* 测试里把轮询调快，别让等待吃掉时间 */
+    NetA.pollMs = 120; NetB.pollMs = 120;
+    A.showScreen('screen-net'); B.showScreen('screen-net');
+    await NetA.create('房主', {mode:'1v1', apPerWin:2});
+    const code = NetA.code;
+    await NetB.join(code, '朋友');
+    await sleep(700);
+    log(NetA.slots.filter(Boolean).length===2 && NetB.slots.filter(Boolean).length===2, '两个真人都在座位上');
+
+    /* 开局 */
+    await NetA.start();
+    await sleep(1600);
+    const NPA = A.__api.NetPlay, NPB = B.__api.NetPlay;
+    log(NPA.role === 'host', '房主是 host（跑引擎）', NPA.role);
+    log(NPB.role === 'guest', '访客是 guest（只渲染）', NPB.role);
+    log(!!A.state(), '房主有对局状态');
+    log(NetB.spectating === false, '访客不是观战模式，而是真正在打');
+
+    /* 访客自动回答房主的提问（模拟真人点按钮） */
+    let answered = 0, asksSeen = 0;
+    const autoAnswer = setInterval(()=>{
+      try{
+        const doc = fB.contentDocument;
+        const box = doc.getElementById('netAsk');
+        if(!box || box.style.display === 'none') return;
+        asksSeen++;
+        const btns = box.querySelectorAll('button');
+        if(!btns.length) return;
+        const isDodge = /闪避/.test(box.textContent);
+        const idx = isDodge ? Math.min(1, btns.length-1) : 0;
+        btns[idx].click();
+        answered++;
+      }catch(e){}
+    }, 90);
+
+    /* 等打完（最多 90 秒） */
+    const t0 = Date.now();
+    let lastRound = 0, hostOver=false, guestOver=false;
+    while(Date.now()-t0 < 90000){
+      await sleep(300);
+      const GA = A.state(), GB = B.state();
+      if(GA) lastRound = Math.max(lastRound, GA.round||0);
+      hostOver = !!(GA && GA.over);
+      guestOver = !!(GB && GB.over);
+      if(hostOver && guestOver) break;
+    }
+    clearInterval(autoAnswer);
+    log(answered > 0, '访客确实被提问并作答', {asks: asksSeen, answered});
+    log(hostOver, '房主端打完了', {rounds:lastRound});
+    log(guestOver, '访客端也认为打完了');
+
+    /* 核心：两边状态必须一致 */
+    const GA = A.state(), GB = B.state();
+    log(snapOf(GA) === snapOf(GB), '两端最终局面完全一致', {host: snapOf(GA), guest: snapOf(GB)});
+    if(GA && GB){
+      log(GA.round === GB.round, '回合数一致', {host:GA.round, guest:GB.round});
+      const same = GA.players.length === GB.players.length && GA.players.every((p,i)=>{
+        const q = GB.players[i];
+        return q && p.name===q.name && p.hp===q.hp && p.ap===q.ap && p.prog===q.prog && p.alive===q.alive;
+      });
+      log(same, '每个人的血量/AP/进程/存活都一样');
+    }
+    /* 访客端 UI 真的画出来了 */
+    const cards = fB.contentDocument.querySelectorAll('#players .pcard');
+    log(cards.length >= 2, '访客端渲染了玩家卡片', cards.length);
+    const logLines = fB.contentDocument.querySelectorAll('#log div').length;
+    log(logLines > 3, '访客端显示了战斗日志', logLines);
+    /* 本轮结束后不能还在等 */
+    log(!NPA.waiting, '房主端没有卡在等待回答', NPA.waiting && NPA.waiting.seatId);
+  }catch(e){
+    log(false, '异常：'+(e&&e.message), (e&&e.stack||'').slice(0,200));
+  }
+  if(errs.length){ out.push('--- 页面错误 ---'); errs.slice(0,8).forEach(e=>out.push('  '+e)); }
+  out.push(''); out.push(fails===0?'SYNC ALL PASS':('SYNC FAILURES: '+fails));
+  document.getElementById('results').textContent=out.join('\n');
+  document.title = fails===0 ? 'SYNC-PASS' : ('SYNC-FAIL-'+fails);
+});
+</script></body></html>

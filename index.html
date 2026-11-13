@@ -215,7 +215,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#0d1219;padding:1px 
 </head>
 <body>
 <div id="app">
-  <h1>方块猜拳战场 <span class="mono">MC 二创桌游 · 基础版 v1.7.0 · <b id="buildTag" style="color:var(--acc2)">联机座位 · 手机版 · 自动更新</b></span></h1>
+  <h1>方块猜拳战场 <span class="mono">MC 二创桌游 · 基础版 v1.7.1 · <b id="buildTag" style="color:var(--acc2)">双人同步 · 手机版 · 自动更新</b></span></h1>
   <div class="sub">猜拳夺 AP → 升进程 / 造装备 / 收补给 → 相互战斗。每位玩家 <b>4 点生命</b>，猜拳获胜的 AP 可在设置里选 <b>1 或 2</b>（判定不产生 AP）。</div>
 
   <!-- ===== SETUPUI:BEGIN ===== -->
@@ -660,6 +660,24 @@ function netHandleEvent(ev){
     return;
   }
   if(a.kind === 'seed' && typeof a.seed === 'number'){ setSeed(a.seed); return; }
+  /* ---- 联机对局同步：提问 / 回答 ---- */
+  if(a.kind === 'ask'){
+    if(typeof NetPlay !== 'undefined' && NetPlay.role === 'guest'){
+      NetPlay.ask = { promptId: a.promptId, ask: a.ask };
+      netGuestPrompt(a.ask, a.list || [], a.ask === 'rps' ? '✊ 猜拳：你出什么？'
+        : a.ask === 'dodge' ? '🛡 对手判定平局：花 1 AP 闪避吗？' : '🎯 轮到你行动');
+    }
+    return;
+  }
+  if(a.kind === 'ans'){
+    const w = (typeof NetPlay !== 'undefined') ? NetPlay.waiting : null;
+    if(w && w.seatId === ev.actor && (!a.promptId || a.promptId === w.promptId)){
+      try{ clearTimeout(w.timer); }catch(e){}
+      NetPlay.waiting = null;
+      w.resolve(a);
+    }
+    return;
+  }
 }
 
 /* ----------------------------- 全局状态 ----------------------------- */
@@ -672,6 +690,7 @@ let rpsResolver = null, rpsPick = null, clickResolver = null, armorResolver = nu
 /* ----------------------------- 玩家 ----------------------------- */
 function makePlayer(name, isHuman, team, isEnemy, id){
   return { id, name, isHuman, team, isEnemy, alive:true, hp:4, maxHp:4, ap:0,
+    seatId:null, isLocal:false,          /* 联机：座位号 / 是不是本机这位玩家 */
     prog:PROG.HAND, progPts:0, items:{}, itemPts:{}, weapon:null, armor:null, armorCharges:0,
     armors:[], armorPriority:[], ench:{},
     inWater:false, effects:[], buildings:{}, mem:{}, flags:{},
@@ -679,6 +698,8 @@ function makePlayer(name, isHuman, team, isEnemy, id){
 }
 const P = id => G.players[id];
 const human = () => G.players.find(p=>p.isHuman);
+/* 联机时“我”= 本机座位上的玩家（多真人局里 human() 可能返回对手） */
+const localHuman = () => (G && (G.players.find(p=>p.isHuman && p.isLocal) || G.players.find(p=>p.isHuman))) || null;
 const alivePlayers = () => G.players.filter(p=>p.alive);
 const aliveEnemiesOf = p => G.players.filter(q=>q.alive && q.team!==p.team);
 const aliveAlliesOf = p => G.players.filter(q=>q.alive && q.team===p.team);
@@ -801,6 +822,14 @@ function hpStr(p){
 
 /* ----------------------------- 日志 / 反馈 ----------------------------- */
 function log(msg, cls){
+  /* 顺便记一份到 G.logLines：联机时房主要把这些日志推给访客端 */
+  try{
+    if(G){
+      G.logLines = G.logLines || [];
+      G.logLines.push({h: msg, c: cls || ''});
+      if(G.logLines.length > 400) G.logLines = G.logLines.slice(-300);
+    }
+  }catch(e){}
   const el=document.getElementById('log'); if(!el) return;
   const d=document.createElement('div');
   const t=document.createElement('span'); t.className='t'; t.textContent='R'+(G?G.round:'-');
@@ -1373,7 +1402,7 @@ function aiRpsMove(p, opponent){
 
 /* ----------------------------- 战斗结束判定 ----------------------------- */
 function checkGameEnd(){
-  const me = human();
+  const me = localHuman();
   if(!me.alive && !G.players.some(q=>q.alive && q.team===me.team)){ endGame(false); return true; }
   const foes = G.players.filter(p=>p.isEnemy);
   if(foes.length && foes.every(e=>!e.alive)){ endGame(true); return true; }
@@ -1438,12 +1467,16 @@ async function startGame(){
   if(rost.notes && rost.notes.length) log('🧩 名单已自动修正：' + rost.notes.join('；'), 'l-warn');
   const myMe = rost.list.find(x=>x.human) || rost.list[0];
   const myTeam = myMe.team|0;
+  /* 联机：谁是本机玩家由座位号决定；其他真人也是 human（他们的输入从网络来） */
+  const mySeat = (typeof Net !== 'undefined' && Net && Net.youId) ? Net.youId : null;
+  const netOn = !!(mySeat && Net && Net.active);
   for(const r of rost.list){
     const team = r.team|0;
-    const nm = r.human ? r.name : (r.remote ? r.name + '（远端·AI 代打）' : r.name);
-    const p = makePlayer(nm, !!r.human, team, (!r.human) && team!==myTeam, players.length);
+    const isMe = !!r.human && (!netOn || !r.seatId || r.seatId === mySeat);
+    const p = makePlayer(r.name, !!r.human, team, (!r.human) && team!==myTeam, players.length);
     p.diff = r.diff || diffKey;                       /* 每人独立 AI 强度 */
-    p.remoteHuman = !!r.remote;                       /* 联机房间里另一个真人（本机 AI 代打） */
+    p.seatId = r.seatId || null;
+    p.isLocal = isMe && !!r.human;
     p.isBot = !!r.isBot;
     players.push(p);
   }
@@ -1493,7 +1526,7 @@ async function startGame(){
   }
   log(`行动经济：每回合 1 次免费行动；之后每 1 AP 可购买一次额外行动。⚠ <b>行动点不可存储</b>——每回合结束时未用完的 AP 会清零。`,'l-sys');
   renderAll();
-  if(!silentStart) gameLoop();
+  if(!silentStart && !netIsGuestView()) gameLoop();
 }
 
 async function gameLoop(){
@@ -1527,19 +1560,9 @@ function setPhase(t){
 async function humanRps(p){
   rlog('humanRps 进入 autoMode=' + autoMode + ' net=' + netIsOn());
   let my;
-  if(netIsOn()){
-    document.getElementById('rpsArea').classList.remove('hidden');
-    const st0 = document.getElementById('rpsStatus');
-    if(st0) st0.textContent = (autoMode ? '自动出拳中…' : '本回合猜拳——选择你的出拳');
-    my = autoMode ? pick(['rock','scissors','paper']) : await rpsPrompt(null);
-    netSendRps(my);
-    const peer = netPeerId();
-    const got = peer ? await netWaitRps(peer) : null;
-    setLastPeer(got || pick(['rock','scissors','paper']));
-    return my;
-  }
   if(autoMode){
-    my = pick(['rock','scissors','paper']);
+    /* 联机时这里只是“本机随便出一个”，结果会广播出去，所以绝不能动引擎 rng */
+    my = netIsOn() ? ['rock','scissors','paper'][Math.floor(Math.random()*3)] : pick(['rock','scissors','paper']);
     document.getElementById('rpsArea').classList.remove('hidden');
     const st1 = document.getElementById('rpsStatus');
     if(st1) st1.textContent = '自动出拳中…';
@@ -1592,8 +1615,8 @@ function judgeRound(moves){
 async function rpsPhase(){
   rlog('rpsPhase 进入');
   const order=[];
-  const me=human();
-  if(me.alive) order.push(me);
+  /* 顺序必须两端一致：先按座位顺序排所有真人，再按固定顺序排 AI */
+  for(const p of G.players) if(p.isHuman && p.alive) order.push(p);
   for(const p of G.players) if(!p.isHuman && p.alive) order.push(p);
   for(const p of G.players) if(p.alive){ p.actionsUsed=0; }
 
@@ -1607,13 +1630,20 @@ async function rpsPhase(){
       if(G.runId !== myRun) return order;              /* 新局已开始 */
       const moves = {};
       if(netIsOn()){
-        const my = await humanRps(me);
-        moves[me.id] = my;
-        const peerMove = lastPeerMove || pick(['rock','scissors','paper']);
-        lastPeerMove = null;
-        const peer = live.find(q=>!q.isHuman);
-        if(peer) moves[peer.id] = peerMove;
-        for(const q of live) if(!q.isHuman && !(q.id in moves)) moves[q.id] = await aiRps(q);
+        /* 联机：本机真人在本地出拳并广播；远端真人的拳等网络送过来；AI 两端各自算（同 seed 同结果） */
+        for(const q of live){
+          if(!q.alive) continue;
+          if(q.isHuman && q.isLocal){
+            const mv = await humanRps(q);
+            moves[q.id] = mv;
+            netSendRps(mv);
+          }else if(q.isHuman){
+            const mv = await netAskRps(q);
+            moves[q.id] = mv || 'rock';
+          }else{
+            moves[q.id] = await aiRps(q);
+          }
+        }
       } else {
         for(const q of live){
           if(!q.alive) continue;
@@ -1630,7 +1660,7 @@ async function rpsPhase(){
         try{ sfx.rps(); }catch(e){}
         if(round >= 8){
           /* 连续平局过多：随机指定一名玩家获得本回合 AP，保证游戏推进 */
-          const win = live[rnd(live.length)];
+          const win = live[(round + live.length) % live.length];   /* 不用 rng：两端必须选出同一人 */
           rpsDecided = 1;
           win.ap += apPerWin;
           log(`✊ 连续 ${round} 轮平局，随机判定 <b>${lname(win)}</b> 胜出并获得 ${apPerWin} AP。`,'l-warn');
@@ -1816,20 +1846,15 @@ async function takeTurn(p){
   while(p.alive && !G.over && guard++ < 16){
     if(G.runId !== myRun) return;                      /* 新局已开始，放弃本回合 */
     if(p.turnSpent >= 8){ log(`（${p.name} 本回合行动次数已达上限）`,'l-sys'); break; }
+    /* 远端真人的回合：等对方的指令（拆成一次性选项表，网络里只传 id） */
+    if(isHuman && netIsOn() && !p.isLocal){
+      const done = await netRemoteTurn(p);
+      if(done) break;
+      continue;
+    }
     const opts = (isHuman ? buildHumanOptions(p) : aiOptions(p, avoid)).filter(o=>isHuman?canShow(p,o):canPay(p,o));
     const usable = opts.filter(o=>o.type!=='pass' && !avoid.includes(actionKey(o)));
     if(isHuman){
-      /* 联机模式下人类回合 = 本地玩家 + 远端玩家的动作都会到达，这里先处理远端的 */
-      if(netIsOn()){
-        const peer = netPeerId();
-        const remote = peer ? await netWaitAct(peer, 60000) : null;
-        if(remote){
-          const actor = P(0);
-          log(`📡 收到对手动作：${remote.label || remote.type}`,'l-sys');
-          await runAction(actor, remote);
-          continue;
-        }
-      }
       /* 人类回合：默认等玩家点按钮；若注入了自动玩家钩子（无头测试 / 自动演示）则交给它 */
       let choice;
       if(autoPlayer){
@@ -2788,6 +2813,12 @@ async function applyAction(p, a){
 
 /* 判定平局时询问：花 1 AP 直接闪避，还是不花 AP 赌一把继续判定 */
 function askDodge(target, attacker){
+  if(netIsOn() && target && target.isHuman && !target.isLocal){
+    return netAskSeat(target, 'dodge', [
+      {id:'yes', label:'🛡 花 1 AP 闪避'},
+      {id:'no',  label:'🎲 不花 AP，继续判定'},
+    ]).then(ans => { setNetWaitHint(''); return !!(ans && ans.id === 'yes'); });
+  }
   return new Promise(res=>{
     let done = false;
     const prevLock = lockUI();                 /* 锁住面板，防止被重绘冲掉 */
@@ -3233,6 +3264,7 @@ let __snapLast = 0, __snapTimer = null;
 function pushSnapshot(){
   try{
     if(!Net || !Net.active || !Net.code) return;      /* 单机模式直接跳过 */
+    if(typeof netIsGuestView === 'function' && netIsGuestView()) return;   /* 访客不冒充房主上报 */
     const now = Date.now();
     if(now - __snapLast < 800){                        /* 节流：每 800ms 最多一次 */
       if(!__snapTimer){
@@ -3264,6 +3296,7 @@ function renderAll(){
     try{ buildActionPanel(pendingChoiceFor, pendingChoice.opts, pendingChoice.settle); }catch(e){}
   }
   try{ pushSnapshot(); }catch(e){}
+  try{ if(typeof netPushState === 'function' && netIsHostEngine()) netPushState(); }catch(e){}
 }
 function gearIcons(p){
   const out = [];
@@ -3439,8 +3472,9 @@ function normalizeRoster(list){
     human: !!x.human,
     team: Math.max(0, Math.min(3, Number(x.team)|0)),
     diff: DIFFS[x.diff] ? x.diff : 'normal',
-    remote: !!x.remote,          /* 联机房间里的其他真人：本机由 AI 代打 */
+    remote: !!x.remote,          /* 联机房间里的其他真人 */
     isBot: !!x.isBot,
+    seatId: x.seatId || null,    /* 联机座位 id（谁是谁都靠它） */
   }));
   if(out.length < 2){
     out.push({name:nextBotName(out), human:false, team:(out[0].team===0?1:0), diff:diffKey});
@@ -3619,7 +3653,7 @@ function saveSettings(){
   try{
     localStorage.setItem('mcSettings', JSON.stringify({
       playerName, gameMode, enemyCount, diffKey, autoMode, apPerWin, features,
-      roster: (roster||[]).map(x=>({name:x.name, human:!!x.human, team:x.team|0, diff:x.diff||'normal', remote:!!x.remote, isBot:!!x.isBot}))
+      roster: (roster||[]).map(x=>({name:x.name, human:!!x.human, team:x.team|0, diff:x.diff||'normal', remote:!!x.remote, isBot:!!x.isBot, seatId:x.seatId||null}))
     }));
   }catch(e){}
 }
@@ -3958,7 +3992,7 @@ function apiBase(){
 const Net = {
   active:false, code:null, youId:null, room:null, slots:[], seats:[], seq:0,
   started:false, hostId:null, seed:null, snapshot:null, spectating:false, launched:false,
-  timer:null, onLog:[], pending:null, _lastSlots:'',
+  timer:null, onLog:[], pending:null, _lastSlots:'', pollMs:350,
   isHost(){ return !!this.hostId && this.hostId === this.youId; },
   mySlot(){ return (this.slots||[]).find(s=>s && s.isYou) || null; },
   api(p, body){
@@ -4005,7 +4039,8 @@ const Net = {
     this.onLog = [ ev => { try{ netHandleEvent(ev); }catch(e){} } ];
     if(this.timer) clearInterval(this.timer);
     const tick = ()=>{ if(this.active) this.pull(); };
-    this.timer = setInterval(tick, 600);
+    /* 350ms：联机对局要靠轮询传“提问/回答”，太慢会让每步决策卡半秒 */
+    this.timer = setInterval(tick, this.pollMs || 350);
     tick();
   },
   stop(){ if(this.timer){ clearInterval(this.timer); this.timer = null; } },
@@ -4020,6 +4055,17 @@ const Net = {
         if(d.snapshot) this.snapshot = d.snapshot;
         this.seats = (d.seats && d.seats.length) ? d.seats
           : (this.slots||[]).filter(s=>s && s.kind==='human').map(s=>({id:s.id, name:s.name, team:s.team, ready:s.ready}));
+        /* 访客：房主推了新状态就拉下来 */
+        if(typeof NetPlay !== 'undefined' && NetPlay.role === 'guest' && d.stateSeq &&
+           d.stateSeq > NetPlay.lastStateSeq && !NetPlay.fetching){
+          NetPlay.fetching = true;
+          NetPlay.lastStateSeq = d.stateSeq;
+          fetch(apiBase() + '/api/room/' + this.code + '/state')
+            .then(r=>r.json())
+            .then(x=>{ if(x && x.ok && x.state) netGuestApplyState(x.state); })
+            .catch(()=>{})
+            .then(()=>{ NetPlay.fetching = false; });
+        }
         const wasStarted = this.started;
         this.started = !!d.started;
         for(const ev of (d.events||[])){
@@ -4027,7 +4073,8 @@ const Net = {
           if(ev.actor === this.youId) continue;
           for(const h of this.onLog){ try{ h(ev); }catch(e){} }
         }
-        /* 房主开打了 / 有人刚开打：决定这端是「执棋」还是「观战」 */
+        
+/* 房主开打了 / 有人刚开打：决定这端是「执棋」还是「观战」 */
         if(this.started && !this.launched && !this.spectating) netOnRoomStarted();
         if(this.spectating) renderSpectate();
         this.renderAll();
@@ -4103,6 +4150,280 @@ const Net = {
   render(){ renderLobby(); },
   renderAll(){ try{ this.render(); }catch(e){} try{ window.renderAll(); }catch(e){} },
 };
+/* =========================================================================
+   联机对局同步（房主权威）
+   -------------------------------------------------------------------------
+   房主 host：只跑一份引擎，负责所有结算；轮到远端真人时发“提问”等回答。
+   访客 guest：不跑引擎，只接收房主推来的局面并渲染；把本地选择发回去。
+   这样不存在两端 RNG 失步问题——局面永远只有一份真相。
+   ========================================================================= */
+const NetPlay = {
+  role: null,          /* 'host' | 'guest' */
+  seq: 0,              /* 提问/状态自增号 */
+  lastStateSeq: 0,     /* 访客已应用的状态版本 */
+  lastPush: 0,
+  ask: null,           /* 访客当前待回答的提问 */
+  waiting: null,       /* 房主当前在等谁回答 */
+};
+const NET_ASK_TIMEOUT = 180000;
+const netIsHostEngine = () => NetPlay.role === 'host';
+const netIsGuestView = () => NetPlay.role === 'guest';
+
+/* ---------------- 房主：问远端要一个决定 ---------------- */
+function netAskSeat(p, kind, list){
+  const seatId = p && p.seatId;
+  return new Promise(resolve=>{
+    if(!seatId || !Net.active){ resolve(null); return; }
+    const promptId = 'q' + (++NetPlay.seq) + '-' + Math.random().toString(36).slice(2, 7);
+    NetPlay.waiting = { seatId, promptId, resolve, timer:null };
+    Net.send({ kind:'ask', ask:kind, promptId, list:list||[], name:p.name });
+    setNetWaitHint(`等待 ${p.name} ${kind==='rps'?'出拳':kind==='dodge'?'决定闪避':'行动'}…`);
+    NetPlay.waiting.timer = setTimeout(()=>{
+      if(NetPlay.waiting && NetPlay.waiting.promptId === promptId){
+        NetPlay.waiting = null;
+        setNetWaitHint('');
+        resolve(null);
+      }
+    }, NET_ASK_TIMEOUT);
+  });
+}
+async function netAskRps(p){
+  const ans = await netAskSeat(p, 'rps', [
+    {id:'rock',     label:'✊ 石头', move:'rock'},
+    {id:'scissors', label:'✌️ 剪刀', move:'scissors'},
+    {id:'paper',    label:'✋ 布',   move:'paper'},
+  ]);
+  setNetWaitHint('');
+  return (ans && ans.move) || null;
+}
+/* 把人类可用的行动 + 商店/护甲命令摊平成一张表（网络里只传 id） */
+function netShopOptions(p){
+  const out = [];
+  const next = p.prog + 1;
+  if(UPGRADE[next] && p.ap >= 1){
+    out.push({ label:`⬆️ 投入 1 步进程进度 → ${PROG_NAME[next]}（1 AP）`,
+               shop:{type:'upgrade'}, cost:1, group:'进程' });
+  }
+  for(const k of Object.keys(ITEMS)){
+    const it = ITEMS[k];
+    if(k === 'god_apple' && !featOn('god_apple')) continue;
+    if(k === 'tnt' && !featOn('tnt')) continue;
+    if(it.prog > p.prog) continue;
+    if(it.build){ if(!buildAllowed(p, k)) continue; }
+    else{
+      if(!it.repeat && hasItem(p, k)) continue;
+      if(it.need && !hasItem(p, it.need)) continue;
+    }
+    const cost = it.build ? BUILD_COST : 1;
+    if(p.ap < cost) continue;
+    out.push({ label:`🛠 ${it.build ? (p.buildings[k] ? '进入 ' : '前往 ') : (itemProgress(p,k)>0?'推进 ':'制作 ')}${it.name}（${cost} AP）`,
+               shop:{type:'craft', key:k}, cost, group:'商店' });
+  }
+  /* 护甲优先顺序（不花 AP，只是换个顺序） */
+  const ars = armorsOf(p);
+  if(ars.length > 1){
+    for(const a of ars){
+      out.push({ label:`🛡 优先消耗：${a.name || a.key}`, shop:{type:'armorPriority', key:a.key}, cost:0, group:'装备' });
+    }
+  }
+  return out;
+}
+function netOptionList(p){
+  const out = [];
+  for(const o of buildHumanOptions(p).filter(o=>canShow(p, o))){
+    if(o.type === 'shop_progress' || o.type === 'shop_craft') continue;   /* 商店改平铺 */
+    out.push({ label:o.label, opt:o, cost:o.cost || 0, group:'行动' });
+  }
+  for(const c of netShopOptions(p)) out.push(c);
+  return out.map((x, i)=>Object.assign({id:'o'+i}, x));
+}
+async function netRemoteTurn(p){
+  let guard = 0;
+  while(p.alive && !G.over && guard++ < 40){
+    if(G.turnSpent >= 8) break;
+    const list = netOptionList(p);
+    const ans = await netAskSeat(p, 'act', list);
+    setNetWaitHint('');
+    if(!ans){ log(`⌛ ${lname(p)} 太久没回应，跳过他的行动。`, 'l-warn'); return false; }
+    if(ans.pass) return true;
+    const item = list.find(x=>x.id === ans.id);
+    if(!item) continue;
+    try{
+      if(item.shop){
+        if(item.shop.type === 'armorPriority') setArmorPriority(p, item.shop.key);
+        else applyShopAction(p, item.shop);
+      }else{
+        await runAction(p, item.opt);
+      }
+    }catch(e){ log('（远端动作执行出错：' + (e && e.message) + '）', 'l-warn'); }
+    renderAll();
+  }
+  return true;
+}
+/* 等待提示（右下角小条） */
+function setNetWaitHint(txt){
+  try{
+    let el = document.getElementById('netWaitHint');
+    if(!el){
+      el = document.createElement('div');
+      el.id = 'netWaitHint';
+      el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:9997;'+
+        'background:#1b2130;border:1px solid var(--line);color:var(--text,#e8ecf5);padding:7px 14px;'+
+        'border-radius:999px;font-size:12.5px;box-shadow:0 8px 24px rgba(0,0,0,.45);display:none';
+      document.body.appendChild(el);
+    }
+    el.textContent = txt || '';
+    el.style.display = txt ? 'block' : 'none';
+  }catch(e){}
+}
+
+/* ---------------- 房主：把局面推给所有端 ---------------- */
+function netSerializeGame(){
+  if(!G) return null;
+  return {
+    seq: ++NetPlay.seq,
+    round: G.round,
+    over: !!G.over,
+    turnOwner: G.turnOwner,
+    dist: G.dist,
+    phase: (document.getElementById('phasePill') || {}).textContent || '',
+    apPerWin,
+    mode: gameMode,
+    players: G.players.map(p=>Object.assign({}, p)),
+    log: (G.logLines || []).slice(-90),
+  };
+}
+function netPushState(){
+  if(!netIsHostEngine() || !Net.active || !G) return;
+  const now = Date.now();
+  if(now - NetPlay.lastPush < 250) return;
+  NetPlay.lastPush = now;
+  let st;
+  try{ st = netSerializeGame(); }catch(e){ return; }
+  if(!st) return;
+  try{
+    fetch(apiBase() + '/api/room/' + Net.code + '/state', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ id: Net.youId, seq: st.seq, state: st })
+    }).catch(()=>{});
+  }catch(e){}
+}
+
+/* ---------------- 访客：把状态画出来 ---------------- */
+function netGuestApplyState(st){
+  if(!st || !Array.isArray(st.players)) return;
+  const runId = (G && G.runId) || 1;
+  G = {
+    players: st.players.map(p=>Object.assign({}, p)),
+    round: st.round || 1,
+    dist: st.dist || {},
+    roundOrder: [],
+    over: !!st.over,
+    turnOwner: st.turnOwner,
+    progSnap: {},
+    runId,
+    logLines: st.log || [],
+    guest: true,
+  };
+  /* isLocal / isEnemy 都是相对“我”的：房主存的是他自己的视角，这里按座位号重算 */
+  const mySeat = (typeof Net !== 'undefined' && Net.youId) ? Net.youId : null;
+  for(const p of G.players){
+    p.isLocal = !!(p.isHuman && p.seatId && mySeat && p.seatId === mySeat);
+  }
+  const me = G.players.find(p=>p.isHuman && p.isLocal) || G.players.find(p=>p.isHuman) || null;
+  if(me){
+    if(!G.players.some(p=>p.isHuman && p.isLocal)) me.isLocal = true;
+    for(const p of G.players) p.isEnemy = (p.team !== me.team) && !p.isHuman;
+  }
+  try{ renderAll(); }catch(e){}
+  try{
+    if(st.phase){ const el = document.getElementById('phasePill'); if(el) el.textContent = st.phase; }
+    const rp = document.getElementById('roundPill'); if(rp) rp.textContent = '回合 ' + (st.round||1);
+    const tp = document.getElementById('turnPill');
+    if(tp) tp.textContent = (st.turnOwner!=null && G.players[st.turnOwner])
+      ? ('当前行动：' + G.players[st.turnOwner].name) : '';
+  }catch(e){}
+  renderGuestLog(st.log || []);
+  if(st.over) netGuestResult();
+}
+function renderGuestLog(lines){
+  const el = document.getElementById('log');
+  if(!el) return;
+  el.innerHTML = (lines || []).map(x=>{
+    if(typeof x === 'string') return '<div>' + x + '</div>';
+    return '<div class="' + (x.c || '') + '">' + (x.h || '') + '</div>';
+  }).join('');
+  el.scrollTop = el.scrollHeight;
+}
+function netGuestResult(){
+  try{
+    const me = G && G.players.find(p=>p.isHuman && p.isLocal);
+    const foes = (G && G.players.filter(p=>!p.isHuman && p.team !== (me ? me.team : -1))) || [];
+    const win = me ? me.alive && foes.every(f=>!f.alive) : false;
+    const ov = document.getElementById('overlay');
+    const box = document.getElementById('overlayBox');
+    if(!ov || !box) return;
+    box.innerHTML = `<h3 style="font-size:22px;margin:0 0 8px">${win ? '🏆 你们赢了！' : '💀 这一局输了'}</h3>
+      <p style="font-size:13.5px;color:var(--dim);line-height:1.8">共进行 ${G.round} 个回合（房主的引擎结算）。</p>
+      <div class="row" style="justify-content:center;margin-top:14px">
+        <button class="btn pri" id="againBtn">再来一局</button></div>`;
+    ov.classList.remove('hidden');
+    const b = document.getElementById('againBtn');
+    if(b) b.onclick = ()=>{ location.reload(); };
+  }catch(e){}
+}
+
+/* ---------------- 访客：提问面板 ---------------- */
+function ensureNetAskBox(){
+  let box = document.getElementById('netAsk');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'netAsk';
+    box.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:10px;z-index:9996;'+
+      'width:min(720px,calc(100vw - 20px));max-height:52vh;overflow:auto;display:none;'+
+      'background:linear-gradient(180deg,#1b2130,#151a22);border:1px solid var(--acc);border-radius:14px;'+
+      'padding:12px;box-shadow:0 14px 40px rgba(0,0,0,.6);font-size:13px';
+    document.body.appendChild(box);
+  }
+  return box;
+}
+function netGuestPrompt(kind, list, title){
+  const box = ensureNetAskBox();
+  box.style.display = 'block';
+  box.innerHTML = `<div style="font-weight:800;margin-bottom:8px;color:var(--acc)">${esc(title || '轮到你')}</div>`;
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.style.gap = '8px';
+  const send = (extra)=>{
+    const q = NetPlay.ask || {};
+    Net.send(Object.assign({kind:'ans', promptId:q.promptId}, extra));
+    NetPlay.ask = null;
+    box.style.display = 'none';
+  };
+  for(const item of (list || [])){
+    const b = document.createElement('button');
+    b.className = 'btn small' + (kind === 'rps' ? ' pri' : '');
+    b.textContent = item.label || String(item);
+    b.onclick = ()=>{ try{ sfx.click(); }catch(e){} send({ id:item.id, move:item.move }); };
+    row.appendChild(b);
+  }
+  if(kind === 'act'){
+    const pass = document.createElement('button');
+    pass.className = 'btn small';
+    pass.textContent = '⏭ 结束行动';
+    pass.onclick = ()=>{ try{ sfx.click(); }catch(e){} send({ pass:true }); };
+    row.appendChild(pass);
+  }
+  box.appendChild(row);
+  if(kind === 'act' && (list||[]).length === 0){
+    const tip = document.createElement('div');
+    tip.className = 'legend';
+    tip.style.marginTop = '6px';
+    tip.textContent = '没有可用行动（AP 不够 / 距离不够），可以直接结束行动。';
+    box.appendChild(tip);
+  }
+}
+
 /* 座位表 / 房间面板渲染 */
 function copyText(t){
   try{
@@ -4190,31 +4511,45 @@ function netRosterFromRoom(){
     const isMe = !!s.isYou;
     out.push({
       name: s.name,
-      human: !!isMe,
+      human: (s.kind === 'human'),        /* 联机时所有真人座位都是 human（谁本机由 seatId 判定） */
       team: s.team|0,
       diff: (s.kind==='bot' ? (s.diff || 'normal') : ((Net.room && Net.room.diff) || 'normal')),
       remote: (s.kind==='human' && !isMe),
       isBot: (s.kind==='bot'),
+      seatId: s.kind==='human' ? s.id : null,
     });
   }
   return out;
 }
 function netOnRoomStarted(){
   const me = Net.mySlot();
-  if(me && Net.isHost()){
-    Net.launched = true;
-    try{
-      roster = normalizeRoster(netRosterFromRoom()).list.map((x,i)=>({...x}));
-      /* 保留 remote 标记，方便开局日志区分「远端真人（本机代打）」 */
-      const raw = netRosterFromRoom();
-      roster = raw.map((x,i)=>({name:x.name, human:x.human, team:x.team, diff:x.diff, remote:x.remote}));
-      saveSettings();
-    }catch(e){}
-    const seed = Net.seed || netSeedFromCode(Net.code);
-    netStartMatch(seed);
-  }else{
+  if(!me){                                  /* 不在座位上：只能观战 */
     Net.spectating = true;
     renderSpectate();
+    return;
+  }
+  Net.launched = true;
+  Net.spectating = false;
+  NetPlay.role = Net.isHost() ? 'host' : 'guest';
+  try{
+    const raw = netRosterFromRoom();
+    roster = raw.map(x=>({ name:x.name, human:x.human, team:x.team, diff:x.diff,
+                           remote:x.remote, isBot:x.isBot, seatId:x.seatId }));
+    ensureRoster();
+    saveSettings();
+  }catch(e){}
+  const seed = Net.seed || netSeedFromCode(Net.code);
+  if(NetPlay.role === 'host'){
+    netStartMatch(seed);
+  }else{
+    /* 访客：不跑引擎，等房主推状态过来 */
+    setSeed(seed);
+    showScreen('game');
+    const lg = document.getElementById('log');
+    if(lg) lg.innerHTML = '<div class="l-sys">🌐 已连上房主的对局，正在接收局面…</div>';
+    const mp = document.getElementById('modePill');
+    if(mp) mp.textContent = '联机对局';
+    NetPlay.lastStateSeq = 0;
   }
 }
 function spectateHTML(peek){
@@ -4409,7 +4744,8 @@ window.MCGame = {
     setAutoPlayer(fn){ autoPlayer = fn; },
     setRpsExternal(fn){ rpsExternal = fn; },
     progNeed, progProgress, progMaxed, addProgPoint, setSeed,
-    get Net(){ return Net; }, netCreateRoomWith, netJoinRoomWith, netIsOn, netHandleEvent,
+    get Net(){ return Net; }, get NetPlay(){ return NetPlay; }, netCreateRoomWith, netJoinRoomWith, netIsOn, netHandleEvent,
+    netPushState, netGuestApplyState, netSerializeGame,
     judgeRound, rpsPhase, doJudgment, showSlotsMulti, armorHasAny, BUILD_COST, ATK_COST, CONSUME_COST, ROD_COST, MOVE_COST, attackProfile, itemNeed, addItemPoint, buildActionPanel, renderAll, refreshTopBar, WEAPON_KEYS, THROWABLE_KEYS, featOn, features, FEATURE_KEYS, isAttackAction, ATTACK_TYPES, promptRpsMove, waitClick, armorsOf, setArmorPriority, gainArmor, askDodge,
     getLastClickAt: ()=>lastClickAt, rpsBtnHit, getRpsLog: ()=>globalThis.__rpsLog || [],
     itemNeed, itemProgress, itemReady, addItemPoint, itemSave, itemLoad, itemProgRow, renderItemGrid, ITEMS, SPECIALS, enchantChoices,
@@ -4452,7 +4788,7 @@ function setAutoPlayerPublic(fn){ autoPlayer = fn; }
    - 服务器根目录的 version.json 是唯一真相：改版本号就能通知所有客户端
    - 发现更新 → 右下角弹窗（含更新说明）；点「立即更新」清缓存 + 更新 SW + 重载
    ========================================================================= */
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.7.1';
 let __verChecking = false;
 function parseVer(v){ return String(v||'0').split(/[.\-+_]/).slice(0,3).map(n=>parseInt(n,10)||0); }
 function verNewer(a, b){
