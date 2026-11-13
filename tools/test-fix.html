@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>fix-test</title>
+<style>body{background:#0b0f14;color:#e8ecf5;font:13px/1.7 Consolas,monospace;padding:12px}
+pre{white-space:pre-wrap}iframe{border:1px solid #333}</style></head>
+<body><pre id="results">running…</pre>
+<iframe id="M" src="/index.html" style="width:390px;height:800px"></iframe>
+<script>
+const out=[]; let fails=0; const NL=String.fromCharCode(10);
+const log=(ok,msg,extra)=>{ if(ok===null) out.push('… '+msg); else { if(!ok) fails++; out.push((ok?'OK  ':'XX  ')+msg+(extra!==undefined?'  '+JSON.stringify(extra):'')); } document.getElementById('results').textContent=out.join(NL); };
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const waitMCG=w=>new Promise(res=>{ const t=setInterval(()=>{ if(w&&w.MCGame){clearInterval(t);res(w.MCGame);} },50); setTimeout(()=>{clearInterval(t);res(null);},9000); });
+const errs=[];
+window.addEventListener('error', e=>errs.push('ERR '+e.message));
+window.addEventListener('load', ()=>{ run().catch(e=>{ log(false,'异常 '+e.message); done(); }); });
+function done(){ if(errs.length){ out.push('--- errors ---'); errs.slice(0,5).forEach(x=>out.push(String(x).slice(0,200))); }
+  out.push(''); out.push(fails===0?'FIX ALL PASS':('FIX FAILURES: '+fails));
+  document.getElementById('results').textContent=out.join(NL);
+  document.title = fails===0?'FIX-PASS':('FIX-FAIL-'+fails); }
+
+async function run(){
+  const f=document.getElementById('M');
+  const M=await waitMCG(f.contentWindow), W=f.contentWindow, doc=f.contentDocument;
+  log(!!M,'页面就绪');
+
+  /* ---- 1) 用静默局手动跑一次 rpsPhase，检查猜拳 UI 是否保留 ---- */
+  M.__api.setInstantRps();
+  M.start({silent:true, seed:31, roster:[
+    {name:'你',human:true,team:0},
+    {name:'队友',human:false,team:0,diff:'easy'},
+    {name:'敌人',human:false,team:1,diff:'easy'},
+  ]});
+  await sleep(300);
+  const area = doc.getElementById('rpsArea'), btns = doc.getElementById('rpsBtns');
+  area.classList.add('hidden'); btns.classList.remove('hidden');   /* 先弄成"干净"状态 */
+
+  const phase = M.__api.rpsPhase();       /* 不 await，等它需要点击 */
+  for(let i=0;i<40;i++){
+    await sleep(150);
+    const b = doc.querySelector('#rpsBtns .btn');
+    if(b && !area.classList.contains('hidden')){ b.click(); break; }
+  }
+  await Promise.race([phase, sleep(6000)]);
+  await sleep(300);
+
+  log(!area.classList.contains('hidden'), '猜拳结束后猜拳区域仍然显示（不再隐藏）');
+  log(btns.classList.contains('hidden'), '结果展示阶段出拳按钮收起，避免误点');
+  const statusTxt = doc.getElementById('rpsStatus').textContent.trim();
+  log(/结果/.test(statusTxt), '状态文案切换成结果提示', statusTxt.slice(0,20));
+
+  /* 下一回合开始，按钮要回来 */
+  const phase2 = M.__api.rpsPhase();
+  await sleep(600);
+  log(!area.classList.contains('hidden'), '新一回合的猜拳区域仍然可见');
+  log(!btns.classList.contains('hidden') || !M.state().over, '新一回合里出拳按钮已恢复（自动模式下可能瞬间结束）');
+  for(let i=0;i<40;i++){ await sleep(120); const b=doc.querySelector('#rpsBtns .btn:not([disabled])'); if(b){ b.click(); break; } }
+  await Promise.race([phase2, sleep(5000)]);
+
+  /* ---- 2) 悬浮球：外力隐藏后 renderAll 拉回 ---- */
+  const fab = doc.getElementById('fab');
+  fab.classList.add('hidden');
+  W.renderAll();
+  await sleep(200);
+  log(!fab.classList.contains('hidden'), 'renderAll 会把悬浮球重新显示出来');
+
+  /* ---- 3) 主动结算 ---- */
+  const G = M.state();
+  log(!!G && !G.over, '结算前对局仍在进行', G && {over:G.over, round:G.round});
+  log(!!doc.getElementById('fabSettle'), '悬浮球抽屉里有「📊 结算」按钮');
+  W.confirm = () => true;
+  W.manualSettle();
+  await sleep(400);
+  const ov = doc.getElementById('overlay'), box = doc.getElementById('overlayBox');
+  log(!ov.classList.contains('hidden'), '主动结算弹出结算窗口');
+  log(/本局已结算/.test(box.textContent), '标题显示「本局已结算」', box.textContent.replace(/\s+/g,' ').slice(0,10));
+  const flat = box.textContent.replace(/\s+/g,' ');
+  log(/最多击杀/.test(flat), '「最多击杀」一定显示');
+  log(/最多击杀[^；]{0,24}?0 人/.test(flat) || /击杀 0 人/.test(flat) || /0 人/.test(flat), '没打死人也显示 0 人', flat.match(/最多击杀[^最]{0,20}/));
+  log(/最多行动点/.test(flat) && /最高单次伤害/.test(flat) && /最多回血/.test(flat) && /进程最高/.test(flat), '其余四项都在');
+  log(!W.localStorage.getItem('mcTempSave'), '主动结算后临时存档被清掉');
+  doc.getElementById('spClose').click();
+  await sleep(150);
+  log(ov.classList.contains('hidden'), '关闭结算窗口');
+  done();
+}
+</script>
+</body></html>

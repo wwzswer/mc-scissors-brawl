@@ -92,7 +92,7 @@ async function run(){
   const txt = box.textContent;
   log(txt.includes('对局时间') && txt.includes('回合数'), '结算显示对局时间与回合数');
   log(txt.includes('进程最高'), '结算显示「进程最高」（并列取最早）');
-  log(!txt.includes('你 · 0 人') && !txt.includes('· 0 AP'), '数值为 0 的记录会自动隐藏');
+  log(/最多击杀/.test(txt) && /进程最高/.test(txt), '0 值记录也会显示（最多击杀 0 人）');
   docM.getElementById('spClose').click();
   await sleep(150);
   log(ov.classList.contains('hidden'), '关闭按钮能关掉结算面板');
