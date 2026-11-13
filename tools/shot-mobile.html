@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>shot-mobile</title>
+<style>html,body{margin:0;background:#0e1116}iframe{border:0;display:block;width:390px;height:844px}</style></head>
+<body>
+<iframe id="f" src="/index.html"></iframe>
+<script>
+const q = new URLSearchParams(location.search);
+const mode = q.get('m') || 'panel';     // panel | closed | settle
+const sleep = ms => new Promise(r=>setTimeout(r, ms));
+const waitMCG = w => new Promise(res=>{ const t=setInterval(()=>{ if(w&&w.MCGame){clearInterval(t);res(w.MCGame);} },50); setTimeout(()=>{clearInterval(t);res(null);},9000); });
+(async ()=>{
+  const f = document.getElementById('f');
+  const M = await waitMCG(f.contentWindow);
+  const W = f.contentWindow, doc = f.contentDocument;
+  M.__api.setFastTiming(); M.__api.setInstantRps();
+  M.__api.setAutoPlayer((p,opts)=>{ const o=opts||[]; return o.find(x=>x.type==='attack')||o.find(x=>x.type==='shop_progress')||{type:'pass'}; });
+
+  if(mode === 'settle'){
+    M.start({silent:false, seed:4321, roster:[
+      {name:'你', human:true, team:0},
+      {name:'史蒂夫', human:false, team:1, diff:'easy'},
+      {name:'苦力怕', human:false, team:1, diff:'normal'},
+    ]});
+    for(let i=0;i<40;i++){ await sleep(200); if(M.state() && M.state().over) break; }
+    if(M.state() && !M.state().over){ W.endGame(true); }   /* 没打完就直接结算，方便截图 */
+    await sleep(600);
+    document.title='SHOT-READY';
+    return;
+  }
+
+  M.start({silent:true, seed:2468, roster:[
+    {name:'你', human:true, team:0},
+    {name:'史蒂夫', human:false, team:0, diff:'normal'},
+    {name:'苦力怕', human:false, team:1, diff:'hard'},
+  ]});
+  await sleep(300);
+  /* 造一点状态，好看清卡片 */
+  const G = M.state();
+  G.players[0].ap = 2; G.players[0].prog = 1; G.players[0].items = {wood_sword:1};
+  G.players[0].weapon = 'wood_sword';
+  G.players[2].hp = 2.5;
+  G.round = 4;
+  for(let i=0;i<12;i++) W.log('第 ' + (i+1) + ' 条演示日志：猜拳与行动结算。', i%3===0?'l-sys':(i%3===1?'l-dmg':'l-good'));
+  W.renderAll();
+
+  const me = G.players.find(x=>x.isHuman);
+  const opts = M.__api.buildHumanOptions(me).filter(o=>M.__api.canShow(me,o));
+  M.__api.askHuman(me, opts);
+  await sleep(400);
+  if(mode === 'closed'){ const fab = doc.getElementById('fab'); if(fab) fab.click(); }
+  await sleep(400);
+  document.title='SHOT-READY';
+})();
+</script>
+</body></html>

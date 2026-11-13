@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>ui-test</title>
+<style>body{background:#0b0f14;color:#e8ecf5;font:13px/1.7 Consolas,monospace;padding:12px}
+pre{white-space:pre-wrap}iframe{border:1px solid #333;vertical-align:top}</style></head>
+<body>
+<pre id="results">running…</pre>
+<iframe id="M" src="/index.html" style="width:390px;height:800px"></iframe>
+<iframe id="D" src="/index.html" style="width:1100px;height:700px"></iframe>
+<script>
+const out=[]; let fails=0;
+const NL = String.fromCharCode(10);
+const log=(ok,msg,extra)=>{ if(ok===null){ out.push('… '+msg); } else { if(!ok) fails++; out.push((ok?'OK  ':'XX  ')+msg+(extra!==undefined?'  '+JSON.stringify(extra):'')); } document.getElementById('results').textContent=out.join(NL); };
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const waitMCG=w=>new Promise(res=>{ const t=setInterval(()=>{ if(w&&w.MCGame){clearInterval(t);res(w.MCGame);} },50); setTimeout(()=>{clearInterval(t);res(null);},9000); });
+const errs=[];
+window.addEventListener('error', e=>errs.push('ERR '+e.message));
+window.addEventListener('unhandledrejection', e=>errs.push('REJ '+((e.reason&&e.reason.message)||e.reason)));
+
+window.addEventListener('load', ()=>{ run().catch(e=>{ log(false,'异常 '+e.message); p((e.stack||'').slice(0,300)); }); });
+function p(x){ out.push(String(x)); document.getElementById('results').textContent=out.join(NL); }
+
+async function run(){
+  const fM=document.getElementById('M'), fD=document.getElementById('D');
+  const M=await waitMCG(fM.contentWindow), D=await waitMCG(fD.contentWindow);
+  const WM=fM.contentWindow, DM=fD.contentWindow, docM=fM.contentDocument, docD=fD.contentDocument;
+  log(!!M && !!D, '两个页面就绪');
+
+  /* ---------- 1. 返回键 ---------- */
+  const backM = docM.getElementById('backBtn');
+  log(!!backM, '存在左上角返回键');
+  log(backM.classList.contains('hidden'), '主菜单上返回键隐藏');
+  M.showScreen('screen-setting');
+  await sleep(120);
+  log(!backM.classList.contains('hidden'), '进入设置后返回键出现');
+  backM.click();
+  await sleep(150);
+  log(docM.getElementById('screen-main').classList.contains('hidden') === false, '点返回键回到主菜单');
+
+  /* ---------- 2. 悬浮球（手机） ---------- */
+  log(WM.innerWidth <= 760, '手机 iframe 宽度生效', WM.innerWidth);
+  const fab = docM.getElementById('fab'), sheet = docM.getElementById('fabSheet');
+  log(fab.classList.contains('hidden'), '主菜单上悬浮球隐藏');
+  M.__api.setFastTiming(); M.__api.setInstantRps();
+  M.start({silent:true, seed:777, roster:[{name:'你',human:true,team:0},{name:'敌人',human:false,team:1,diff:'easy'}]});
+  await sleep(400);
+  log(!fab.classList.contains('hidden'), '对局中悬浮球出现（手机）');
+  /* 手动触发一次人类行动面板：直接调用 askHuman 的构建入口 */
+  const G = M.state();
+  const me = G.players.find(x=>x.isHuman);
+  const opts = M.__api.buildHumanOptions(me).filter(o=>M.__api.canShow(me,o));
+  M.__api.askHuman(me, opts);
+  await sleep(300);
+  const bodyM = docM.getElementById('fabSheetBody');
+  log(bodyM.children.length > 0, '行动面板渲染进悬浮球抽屉（不是行动区）', bodyM.children.length);
+  log(sheet.classList.contains('open'), '轮到玩家时抽屉自动展开');
+  fab.click();
+  await sleep(120);
+  log(!sheet.classList.contains('open'), '再点悬浮球关闭抽屉');
+  fab.click();
+  await sleep(120);
+  log(sheet.classList.contains('open'), '再点一次又展开');
+
+  /* ---------- 3. 桌面端：FAB 不出现，面板仍在行动区 ---------- */
+  log(docD.getElementById('fab').classList.contains('hidden'), '桌面端悬浮球隐藏');
+  D.__api.setFastTiming(); D.__api.setInstantRps();
+  D.start({silent:true, seed:778, roster:[{name:'你',human:true,team:0},{name:'敌人',human:false,team:1,diff:'easy'}]});
+  await sleep(300);
+  const GD = D.state(), meD = GD.players.find(x=>x.isHuman);
+  const optsD = D.__api.buildHumanOptions(meD).filter(o=>D.__api.canShow(meD,o));
+  D.__api.askHuman(meD, optsD);
+  await sleep(200);
+  log(docD.getElementById('actionbar').children.length > 0, '桌面端面板仍渲染在行动区卡片里');
+
+  /* ---------- 4. 临时存档 ---------- */
+  M.state().over = false;
+  WM.renderAll();
+  await sleep(200);
+  const saved = WM.localStorage.getItem('mcTempSave');
+  log(!!saved, '单人对局会产生临时存档');
+  const sv = saved ? JSON.parse(saved) : null;
+  log(sv && sv.G && sv.G.players.length===2, '存档里有 2 名玩家', sv && sv.G.round);
+  log(!docM.getElementById('mResume').classList.contains('hidden'), '主菜单出现「继续上次对局」按钮');
+  /* 结算后应清空 */
+  WM.endGame(true);
+  await sleep(200);
+  log(!WM.localStorage.getItem('mcTempSave'), '结算后临时存档被清除');
+  /* 结算面板 */
+  const ov = docM.getElementById('overlay'), box = docM.getElementById('overlayBox');
+  log(!ov.classList.contains('hidden'), '结算面板出现');
+  log(ov.classList.contains('settle') && box.classList.contains('settlebox'), '结算面板是上方悬浮、不占满样式');
+  log(!!docM.getElementById('spClose'), '结算面板右上角有关闭按钮');
+  const txt = box.textContent;
+  log(txt.includes('对局时间') && txt.includes('回合数'), '结算显示对局时间与回合数');
+  log(txt.includes('进程最高'), '结算显示「进程最高」（并列取最早）');
+  log(!txt.includes('你 · 0 人') && !txt.includes('· 0 AP'), '数值为 0 的记录会自动隐藏');
+  docM.getElementById('spClose').click();
+  await sleep(150);
+  log(ov.classList.contains('hidden'), '关闭按钮能关掉结算面板');
+
+  /* ---------- 5. 联机退出要确认 ---------- */
+  WM.confirm = () => false;
+  let left = false;
+  const N = M.__api.Net;
+  N.active = true; N.code = 'ABCDEFGHI'; N.youId = 'x';
+  const origApi = N.api;
+  N.api = (...a)=>{ left = true; return Promise.resolve({ok:true}); };
+  N.leave();
+  await sleep(100);
+  log(N.active === true && !left, '取消确认时不退出房间');
+  WM.confirm = () => true;
+  N.leave();
+  await sleep(100);
+  log(left === true, '确认后才真正离开房间');
+  N.api = origApi;
+
+  if(errs.length){ out.push('--- 页面错误 ---'); errs.slice(0,5).forEach(x=>out.push(String(x).slice(0,200))); }
+  out.push(''); out.push(fails===0 ? 'UI ALL PASS' : ('UI FAILURES: '+fails));
+  document.getElementById('results').textContent=out.join(NL);
+  document.title = fails===0 ? 'UI-PASS' : ('UI-FAIL-'+fails);
+}
+</script>
+</body></html>

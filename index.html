@@ -179,6 +179,50 @@ code{font-family:ui-monospace,Consolas,monospace;background:#0d1219;padding:1px 
   border:1px solid var(--line);font-family:inherit;cursor:pointer}
 .tchip{font-size:11px;padding:1px 7px;border-radius:999px;font-weight:700;white-space:nowrap}
 #rosterList{max-height:none}
+/* ---- 左上角返回键 ---- */
+.backbtn{position:fixed;left:10px;top:calc(8px + env(safe-area-inset-top));z-index:9990;
+  width:38px;height:38px;border-radius:12px;border:1px solid var(--line);
+  background:rgba(27,33,48,.94);color:var(--txt);font-size:22px;line-height:1;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.45);
+  -webkit-tap-highlight-color:transparent}
+.backbtn:active{background:#2b3550}
+@media (min-width:761px){ .backbtn{left:14px;top:14px;width:40px;height:40px} }
+
+/* ---- 右下角悬浮球 + 行动抽屉 ---- */
+.fab{position:fixed;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:9991;
+  width:56px;height:56px;border-radius:50%;border:1px solid #3fa872;cursor:pointer;
+  background:linear-gradient(180deg,#2f7d55,#205c3d);color:#eafff5;font-size:26px;line-height:1;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 10px 28px rgba(0,0,0,.55);
+  -webkit-tap-highlight-color:transparent;transition:transform .12s}
+.fab:active{transform:scale(.94)}
+.fab.attn{box-shadow:0 0 0 3px rgba(110,231,168,.55),0 10px 28px rgba(0,0,0,.55);animation:fabPulse 1.4s infinite}
+@keyframes fabPulse{0%,100%{box-shadow:0 0 0 2px rgba(110,231,168,.35),0 10px 28px rgba(0,0,0,.55)}
+  50%{box-shadow:0 0 0 6px rgba(110,231,168,.15),0 10px 28px rgba(0,0,0,.55)}}
+.fabsheet{position:fixed;right:12px;bottom:calc(80px + env(safe-area-inset-bottom));z-index:9992;
+  width:min(440px,calc(100vw - 24px));max-height:min(66vh,560px);overflow:auto;display:none;
+  background:linear-gradient(180deg,#1b2130,#151a22);border:1px solid var(--acc);border-radius:16px;
+  padding:10px 12px 14px;box-shadow:0 18px 50px rgba(0,0,0,.65)}
+.fabsheet.open{display:block}
+.fabsheet .fshead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;
+  position:sticky;top:-10px;background:linear-gradient(180deg,#1b2130,#1b2130);padding:4px 0;z-index:2}
+.fabsheet .fshead b{font-size:13px;color:var(--acc)}
+#fabSheetBody .actionbar{min-height:0}
+#fabSheetBody .tabs{margin-bottom:6px}
+
+/* ---- 结算面板：上方悬浮、不占满、右上角关闭 ---- */
+#overlay.settle{align-items:flex-start;justify-content:center;padding:max(20px,env(safe-area-inset-top)) 10px 20px;
+  overflow:auto}
+.modal-open .backbtn, .modal-open .fab, .modal-open .fabsheet{display:none !important}
+#overlay .box.settlebox{max-width:720px;width:min(720px,calc(100vw - 20px));max-height:86vh;overflow:auto;
+  text-align:left;padding:16px 18px 14px;position:relative;border-color:var(--acc)}
+.sp-close{position:absolute;right:8px;top:6px;width:32px;height:32px;border-radius:9px;border:1px solid var(--line);
+  background:#1b2230;color:var(--txt);font-size:16px;line-height:1;cursor:pointer}
+.sp-close:active{background:#2b3550}
+.sp-row{display:flex;justify-content:space-between;gap:10px;padding:5px 2px;border-bottom:1px dashed #1b2231;font-size:13px}
+.sp-row .k{color:var(--dim)}
+.sp-row .v{font-weight:700;text-align:right}
+.sp-badge{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;background:#243a2c;color:#9df3c4;margin-right:6px}
+
 /* ---- 手机 / 窄屏适配 ---- */
 @media (max-width:760px){
   body{padding:8px 8px calc(28px + env(safe-area-inset-bottom))}
@@ -207,15 +251,100 @@ code{font-family:ui-monospace,Consolas,monospace;background:#0d1219;padding:1px 
   #updBox{right:8px;left:8px;bottom:8px;max-width:none}
 }
 @media (max-width:420px){
-  .btn.rps{padding:13px 10px;min-width:0;flex:1 1 30%}
-  .reveal{font-size:32px;gap:10px}
-  h1{font-size:16.5px}
+  .btn.rps{padding:11px 8px;min-width:0;flex:1 1 30%;font-size:15px}
+  .reveal{font-size:26px;gap:8px;min-height:44px}
+  h1{font-size:16px}
+}
+
+/* ===== 手机版：整体瘦身 + 左右两栏（左=玩家，右=日志），操作全进悬浮球 ===== */
+@media (max-width:760px){
+  #app{padding-top:44px}
+  body{padding:6px 6px calc(10px + env(safe-area-inset-bottom))}
+  h1{font-size:15.5px;margin:2px 0 0}
+  h1 .mono{font-size:10.5px;margin-top:1px}
+  .sub{font-size:11.5px;margin-bottom:8px;line-height:1.6}
+  .card{padding:8px;border-radius:11px;margin-bottom:6px}
+  .sec{font-size:10.5px;margin:0 0 5px;letter-spacing:1px}
+  .pill{font-size:10.5px;padding:1px 6px;margin:1px 3px 1px 0}
+  .btn{padding:8px 10px;font-size:13px;border-radius:9px}
+  .btn.small{padding:6px 9px;font-size:12px;border-radius:8px}
+  .mbtn{font-size:15px;padding:11px 13px}
+
+  /* 游戏界面：两栏 */
+  #game{display:grid;grid-template-columns:1fr 1fr;column-gap:6px;align-items:start}
+  #game > .card:nth-child(1){grid-column:1/-1}
+  #game > .players{grid-column:1;grid-row:2;grid-template-columns:1fr;gap:6px;margin-bottom:0}
+  #game > .card:nth-child(3){display:none}                /* 行动区 → 悬浮球 */
+  #game > .row:nth-child(4){grid-column:2;grid-row:2;display:block;margin:0}
+  #game > .row:nth-child(4) > .card{gap:0;margin-bottom:6px}
+  #game > .row:nth-child(4) > .card:nth-child(2){display:none}  /* 速查收起 */
+
+  /* 玩家卡片瘦一点 */
+  .pcard{padding:7px 8px;border-radius:10px}
+  .pcard .head{gap:5px;margin-bottom:4px}
+  .pcard .name{font-size:12.5px}
+  .tag{font-size:9.5px;padding:1px 5px}
+  .tchip{font-size:9.5px;padding:0 5px}
+  .hpbar{height:9px;margin:2px 0 4px}
+  .stat{font-size:10.5px;gap:1px 6px}
+  .stat .v span[style]{font-size:10px !important}
+  .progline{font-size:10px}
+  .pcard .legend{font-size:10px !important}
+  #log{height:auto;max-height:52vh;font-size:10.5px;line-height:1.45;padding:6px 7px;border-radius:9px}
+  #log div{padding:1px 0}
+  #rpsArea{padding:2px 0;gap:6px}
+  .reveal{font-size:28px;gap:10px;min-height:46px}
+  #rpsStatus{font-size:11px}
+  .btn.rps{font-size:14px;padding:10px 8px;min-width:0;flex:1 1 30%}
+  .slot{width:52px;height:52px}
+  #overlay .box{padding:12px 14px;border-radius:14px}
+
+  /* 玩游戏时收起标题，顶栏一行放下 pills */
+  body.playing h1, body.playing .sub{display:none}
+  body.playing #app{padding-top:40px}
+  #game > .card:nth-child(1){padding:6px 8px}
+  #game > .card:nth-child(1) .row{gap:4px}
+  #game .pill{font-size:10px;padding:1px 5px;margin:0 2px 0 0}
+  #autoToggle{font-size:11px;padding:4px 8px;border-radius:8px}
+  .mo-hide{display:none !important}
+  .stat .v{font-size:10.5px;line-height:1.45}
+  .stat .k{white-space:nowrap}
+  /* 抽屉里的商品卡也瘦一点 */
+  #fabSheetBody .item{padding:6px 8px;border-radius:9px}
+  #fabSheetBody .item .it{font-size:12px}
+  #fabSheetBody .item .desc{font-size:10.5px;line-height:1.45}
+  #fabSheetBody .progrow .dot{width:8px;height:8px}
+  #fabSheetBody .tab{font-size:11px;padding:6px 8px}
+
+  /* 更紧凑：顶栏一行、猜拳按钮不换行、日志字更小、底部给悬浮球留位 */
+  #game{padding-bottom:78px}
+  #game > .card:nth-child(1) .row{flex-wrap:nowrap;overflow:hidden}
+  #game > .card:nth-child(1) .row > .row{flex-wrap:nowrap;overflow:hidden;min-width:0}
+  #autoToggle{flex:0 0 auto}
+  #rpsArea{padding:0}
+  .reveal{min-height:40px;font-size:22px}
+  .reveal .slot{width:44px;height:44px;border-radius:10px}
+  #rpsStatus{font-size:10.5px}
+  #rpsBtns{width:100%;justify-content:center}
+  .btn.rps{font-size:12.5px;padding:9px 6px;white-space:nowrap;flex:1 1 0;min-width:0}
+  #log{font-size:10px;line-height:1.4}
+  #log .t{font-size:9px}
+}
+/* 手机整页再缩 8%，视觉尺寸更接近"手机 App"而不是"网页" */
+@media (max-width:760px){
+  #app{zoom:.92}
+  h1{font-size:14px}
+  .mbtn{font-size:14px;padding:10px 12px}
+  .sub{font-size:11px}
+  .legend{font-size:11px}
+  .btn{font-size:12.5px}
 }
 </style>
 </head>
 <body>
+<button id="backBtn" class="backbtn hidden" aria-label="返回">‹</button>
 <div id="app">
-  <h1>方块猜拳战场 <span class="mono">MC 二创桌游 · 基础版 v1.7.2 · <b id="buildTag" style="color:var(--acc2)">双人同步 · 手机版 · 自动更新</b></span></h1>
+  <h1>方块猜拳战场 <span class="mono">MC 二创桌游 · 基础版 v1.7.3 · <b id="buildTag" style="color:var(--acc2)">悬浮球 · 临时存档 · 结算</b></span></h1>
   <div class="sub">猜拳夺 AP → 升进程 / 造装备 / 收补给 → 相互战斗。每位玩家 <b>4 点生命</b>，猜拳获胜的 AP 可在设置里选 <b>1 或 2</b>（判定不产生 AP）。</div>
 
   <!-- ===== SETUPUI:BEGIN ===== -->
@@ -225,6 +354,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#0d1219;padding:1px 
       <div class="sec">主菜单</div>
       <div class="vertmenu">
         <button class="mbtn" id="mStart">▶ 开始游戏</button>
+        <button class="mbtn hidden" id="mResume">⏵ 继续上次对局</button>
         <button class="mbtn" id="mSetting">⚙ 设置</button>
         <button class="mbtn" id="mRules">📖 规则</button>
         <button class="mbtn" id="mNet">🌐 局域网联机</button>
@@ -447,6 +577,12 @@ code{font-family:ui-monospace,Consolas,monospace;background:#0d1219;padding:1px 
 </div>
 
 <div id="overlay" class="hidden"><div class="box" id="overlayBox"></div></div>
+<!-- 右下角悬浮球：手机端把所有行动/制作/收集塞进这里 -->
+<button id="fab" class="fab hidden" aria-label="行动面板">＋</button>
+<div id="fabSheet" class="fabsheet">
+  <div class="fshead"><b>⚔ 行动 · 制作 · 收集</b><button class="btn small" id="fabClose">✕</button></div>
+  <div id="fabSheetBody"></div>
+</div>
 
 <script>
 /* =========================================================================
@@ -695,7 +831,9 @@ function makePlayer(name, isHuman, team, isEnemy, id){
     prog:PROG.HAND, progPts:0, items:{}, itemPts:{}, weapon:null, armor:null, armorCharges:0,
     armors:[], armorPriority:[], ench:{},
     inWater:false, effects:[], buildings:{}, mem:{}, flags:{},
-    lastRps:null, rpsTally:{rock:0,scissors:0,paper:0}, kills:0, actionsUsed:0, slotsLeft:1, turnSpent:0 };
+    lastRps:null, rpsTally:{rock:0,scissors:0,paper:0}, kills:0, actionsUsed:0, slotsLeft:1, turnSpent:0,
+    /* 结算统计 */
+    st:{ap:0, dmgMax:0, heal:0, kills:0}, progAtRound:0 };
 }
 const P = id => G.players[id];
 const human = () => G.players.find(p=>p.isHuman);
@@ -878,6 +1016,7 @@ const sfx = (function(){
 })();
 
 /* ----------------------------- 伤害 / 治疗 / 护甲 ----------------------------- */
+let CUR_ATTACKER = null;        /* performAttack 期间指向攻击者，用于统计最高伤害/击杀 */
 function tryDamage(target, dmg, opts={}){
   dmg = dmg.slice();
   const { ignoreArmor=false, isExplosion=false, noArmorConsume=false, label='' } = opts;
@@ -922,6 +1061,9 @@ function tryDamage(target, dmg, opts={}){
   if(real>0){ sfx.hit(); shakeCard(target); floaty(target,'-'+real,'#ff8080'); }
   if(tmpUsed>0) log(`${lname(target)} 的临时生命吸收了 ${tmpUsed} 点伤害。`,'l-sys');
   const detail = [dmg[0]?`物理${rm(dmg[0])}`:'', dmg[1]?`火焰${rm(dmg[1])}`:'', dmg[2]?`法术${rm(dmg[2])}`:'', dmg[3]?`穿甲${rm(dmg[3])}`:''].filter(Boolean).join(' + ');
+  if(CUR_ATTACKER && CUR_ATTACKER.st && CUR_ATTACKER !== target){
+    CUR_ATTACKER.st.dmgMax = Math.max(CUR_ATTACKER.st.dmgMax || 0, total);
+  }
   log(`${lname(target)} 受到 <b>${total}</b> 点伤害${label?`（${label}：${detail}）`:''} → 生命 ${hpStr(target)}`, 'l-dmg');
   if(target.hp<=0) killPlayer(target);
   renderAll();
@@ -934,11 +1076,14 @@ function killPlayer(p){
     renderAll(); return;
   }
   p.alive=false; p.hp=0; p.inWater=false;
+  if(CUR_ATTACKER && CUR_ATTACKER.st && CUR_ATTACKER !== p) CUR_ATTACKER.st.kills = (CUR_ATTACKER.st.kills||0) + 1;
   log(`☠️ ${lname(p)} 被击败，退出战斗。`,'l-warn');
   renderAll(); checkGameEnd();
 }
 function healPlayer(p, amount, src){
+  const before = p.hp;
   p.hp = rm(Math.min(p.maxHp, p.hp+amount));
+  if(p.st) p.st.heal = rm((p.st.heal||0) + Math.max(0, rm(p.hp - before)));
   sfx.heal(); floaty(p,'+'+rm(amount),'#8ff0c0');
   log(`${lname(p)} 回复 ${rm(amount)} 点生命${src?`（${src}）`:''} → ${hpStr(p)}`,'l-good');
   renderAll();
@@ -1050,6 +1195,7 @@ function addProgPoint(p){
   while(!progMaxed(p) && p.progPts >= progNeed(p)){
     p.progPts -= progNeed(p);
     p.prog += 1;
+    p.progAtRound = (G && G.round) || 0;      /* 记录"达到当前最高进程"的回合，供结算并列判断 */
     leveled = true;
     log(`⬆️ ${lname(p)} 的进程推进到 <b>${PROG_NAME[p.prog]}</b>！`,'l-good');
     if(p.prog===PROG.WOOD) log('（木进程：木剑、皮革甲、村庄）','l-sys');
@@ -1132,8 +1278,10 @@ function attackProfile(attacker, key){
 
 /* ----------------------------- 攻击执行 ----------------------------- */
 function performAttack(attacker, target, key, opts={}){
-  return (async ()=>{
-    const ranged = !!opts.ranged;
+  const __prevAttacker = CUR_ATTACKER;
+  CUR_ATTACKER = attacker;
+  const __p = (async ()=> {
+        const ranged = !!opts.ranged;
 
     /* TNT 爆炸 */
     if(key==='tnt'){
@@ -1287,6 +1435,8 @@ function performAttack(attacker, target, key, opts={}){
     renderAll();
     return true;
   })();
+  __p.finally(()=>{ CUR_ATTACKER = __prevAttacker; });
+  return __p;
 }
 
 /* ----------------------------- 判定 ----------------------------- */
@@ -1411,19 +1561,91 @@ function checkGameEnd(){
   if(!me.alive){ endGame(false); return true; }
   return false;
 }
+function fmtDuration(ms){
+  const t = Math.max(0, Math.round((ms||0)/1000));
+  const m = Math.floor(t/60), s2 = t%60;
+  return m + ' 分 ' + String(s2).padStart(2,'0') + ' 秒';
+}
+/* 结算榜：返回 [{label, who, value}] */
+function settlementRows(){
+  const P2 = (G && G.players) || [];
+  const pickBest = (valFn, cmp)=>{
+    let best = null, bestV = null;
+    for(const p of P2){
+      const v = valFn(p) || 0;
+      if(bestV === null || cmp(v, bestV) > 0){ best = p; bestV = v; }
+    }
+    return {p:best, v:bestV};
+  };
+  const rows = [];
+  const ap = pickBest(p=>p.st && p.st.ap, (a,b)=>a-b);
+  if(ap.p && ap.v > 0) rows.push({label:'最多行动点', who:ap.p.name, value:ap.v + ' AP'});
+  const dm = pickBest(p=>p.st && p.st.dmgMax, (a,b)=>a-b);
+  if(dm.p && dm.v > 0) rows.push({label:'最高单次伤害', who:dm.p.name, value:dm.v + ' 点'});
+  const kl = pickBest(p=>p.st && p.st.kills, (a,b)=>a-b);
+  if(kl.p && kl.v > 0) rows.push({label:'最多击杀', who:kl.p.name, value:kl.v + ' 人'});
+  const hl = pickBest(p=>p.st && p.st.heal, (a,b)=>a-b);
+  if(hl.p && hl.v > 0) rows.push({label:'最多回血', who:hl.p.name, value:rm(hl.v) + ' 点'});
+  /* 进程最高；并列时取最早达到的（progAtRound 小的） */
+  let bestProg = null;
+  for(const p of P2){
+    if(!bestProg) { bestProg = p; continue; }
+    const a = p.prog, b = bestProg.prog;
+    if(a > b){ bestProg = p; continue; }
+    if(a === b){
+      const ra = p.progAtRound || 9999, rb = bestProg.progAtRound || 9999;
+      if(ra < rb) bestProg = p;
+    }
+  }
+  if(bestProg){
+    rows.push({label:'进程最高', who:bestProg.name,
+      value: PROG_NAME[bestProg.prog] + (bestProg.progAtRound ? `（第 ${bestProg.progAtRound} 回合）` : '')});
+  }
+  return rows;
+}
+function settlementHTML(win){
+  const rows = settlementRows();
+  const dur = fmtDuration((G.startedAt ? Date.now() - G.startedAt : 0));
+  const teams = new Set((G.players||[]).map(p=>p.team)).size;
+  const info = [
+    ['对局时间', dur],
+    ['回合数', G.round + ' 回合'],
+    ['参战', (G.players||[]).length + ' 人 · ' + teams + ' 个队伍'],
+  ];
+  const me = (G.players||[]).find(q=>q.isHuman && q.isLocal) || (G.players||[]).find(q=>q.isHuman);
+  return `
+  <button class="sp-close" id="spClose" aria-label="关闭">✕</button>
+  <h3 style="font-size:20px;margin:0 0 2px">${win?'🏆 你赢了！':'💀 你被击败了'}</h3>
+  <div class="legend" style="margin-bottom:10px">${me ? esc(me.name) + ' · ' : ''}${PROG_NAME[me?me.prog:0] || ''}${me && me.alive ? ' · 存活' : (me?' · 已阵亡':'')}</div>
+  <div class="sec" style="margin-top:0">对局信息</div>
+  ${info.map(([k,v])=>`<div class="sp-row"><span class="k">${k}</span><span class="v">${esc(v)}</span></div>`).join('')}
+  <div class="sec" style="margin-top:10px">本局记录</div>
+  ${rows.map(r=>`<div class="sp-row"><span class="k"><span class="sp-badge">${r.label}</span></span><span class="v">${esc(r.who)} · ${esc(r.value)}</span></div>`).join('')}
+  <details style="margin-top:10px"><summary class="legend" style="cursor:pointer">查看每人总结</summary>
+    <div class="legend" style="line-height:1.9;margin-top:6px">
+      ${(G.players||[]).map(p=>`${esc(p.name)}：${p.alive?rm(p.hp)+' 血':'已阵亡'} · ${PROG_NAME[p.prog]} · ${gearLabel(p)}`).join('<br>')}
+    </div></details>
+  <div class="row" style="justify-content:center;margin-top:14px;gap:8px">
+    <button class="btn pri" id="againBtn">再来一局</button>
+    <button class="btn small" id="spClose2">关闭</button>
+  </div>`;
+}
 function endGame(win){
   if(G.over) return;
   G.over=true;
+  clearTempGame();                      /* 结算即作废临时存档 */
   const ov=document.getElementById('overlay'), box=document.getElementById('overlayBox');
-  box.innerHTML = `<h3 style="font-size:22px;margin:0 0 8px">${win?'🏆 你赢了！':'💀 你被击败了'}</h3>
-    <p style="font-size:13.5px;color:var(--dim);line-height:1.8">
-      共进行 ${G.round} 个回合。${win?'恭喜成为方块世界的最后赢家。':'再来一局吧——试试先做护甲，或抢下铁砧用于修复。'}</p>
-    <p style="font-size:12.5px;color:var(--dim);line-height:1.9;text-align:left">
-      ${G.players.map(p=>`${p.name}：${p.alive?rm(p.hp)+' 血':'已阵亡'} · ${PROG_NAME[p.prog]} · ${gearLabel(p)}`).join('<br>')}</p>
-    <div class="row" style="justify-content:center;margin-top:14px">
-      <button class="btn pri" id="againBtn">再来一局</button></div>`;
+  box.innerHTML = settlementHTML(win);
+  box.classList.add('settlebox');
+  ov.classList.add('settle');
   ov.classList.remove('hidden');
-  document.getElementById('againBtn').onclick=()=>{ ov.classList.add('hidden'); location.reload(); };
+  document.body.classList.add('modal-open');
+  const close = ()=>{ ov.classList.add('hidden'); ov.classList.remove('settle'); box.classList.remove('settlebox');
+                      document.body.classList.remove('modal-open'); };
+  const b1 = document.getElementById('spClose'); if(b1) b1.onclick = close;
+  const b2 = document.getElementById('spClose2'); if(b2) b2.onclick = close;
+  const ab = document.getElementById('againBtn');
+  if(ab) ab.onclick = ()=>{ ov.classList.add('hidden'); location.reload(); };
   log(win?'🏆 <b>战斗结束：你获胜！</b>':'💀 <b>战斗结束：你被击败。</b>','l-warn');
 }
 
@@ -1459,6 +1681,7 @@ async function startGame(){
   if(G){ G.over = true; }           /* 结束上一局，旧的主循环会自行退出 */
   runSeq += 1;
   const myRun = runSeq;
+  try{ if(!(typeof Net !== 'undefined' && Net.active)) clearTempGame(); }catch(e){}
   showScreen('game');
   document.getElementById('log').innerHTML='';
 
@@ -1483,7 +1706,8 @@ async function startGame(){
   }
   const myFoes = players.filter(p=>p.isEnemy).length;
   const myAllies = players.filter(q=>!q.isEnemy && !q.isHuman).length;
-  G = { players, round:1, dist:{}, roundOrder:[], over:false, turnOwner:null, progSnap:{}, runId:myRun };
+  G = { players, round:1, dist:{}, roundOrder:[], over:false, turnOwner:null, progSnap:{},
+        runId:myRun, startedAt: Date.now() };
   globalThis.__MC_RUN = myRun;        /* 供旧循环自查是否过期 */
   players.forEach(a=>{ G.dist[a.id]={}; players.forEach(b=>{ G.dist[a.id][b.id] = a===b?0:1; }); });
   /* 载入该名称上次保存的进程进度 */
@@ -1676,7 +1900,7 @@ async function rpsPhase(){
       rpsDecided = 1;
       const winners = (res.winners && res.winners.length ? res.winners : [res.winner]).map(id=>P(id)).filter(Boolean);
       /* 胜出者一律各得满额 apPerWin，不做均分 */
-      for(const w of winners) w.ap += apPerWin;
+      for(const w of winners){ w.ap += apPerWin; if(w.st) w.st.ap += apPerWin; }
       const names = winners.map(w=>lname(w)).join('、');
       log(`✊ <b>猜拳</b>（第 ${round} 轮）：${detail} → <b>${names} 胜出，各 +${apPerWin} AP</b>。`,'l-rps');
       showSlotsMulti(moves, winners[0] ? winners[0].id : null);
@@ -2091,13 +2315,24 @@ function tabOfOption(o){
   return 'craft';                       /* 补给类（面包/金苹果/药水） */
 }
 
+function isMobileUI(){ return window.innerWidth <= 760; }
+/* 行动面板的宿主：手机 → 悬浮球抽屉；桌面 → 行动区卡片 */
+function actionHostEl(){
+  if(isMobileUI()){
+    const body = document.getElementById('fabSheetBody');
+    if(body) return body;
+  }
+  return document.getElementById('actionbar');
+}
 function buildActionPanel(p, opts, settle){
   window.__mcOptions = opts;
+  const isNewChoice = (pendingChoice === null || pendingChoice === undefined) || pendingChoice.settle !== settle;
   pendingChoice = { opts, settle };
   pendingChoiceFor = p;
   const allOpts = opts || [];
-  const bar = document.getElementById('actionbar');
+  const bar = actionHostEl();
   if(!bar) return;
+  if(isMobileUI() && isNewChoice) fabToggle(true);   /* 轮到你了：自动弹开抽屉 */
 
   /* 顶栏信息 */
   const info = document.createElement('div');
@@ -2342,7 +2577,7 @@ function renderProgressTab(body, p, extra){
 function openShop(p, craftFirst){
   return new Promise(resolve=>{
   let mode = craftFirst ? 'progress' : 'craft';
-  const bar=document.getElementById('actionbar');
+  const bar=actionHostEl();
   const box=document.createElement('div');
   box.className='card'; box.style.margin='0';
   const tabs=document.createElement('div'); tabs.className='tabs';
@@ -3298,13 +3533,15 @@ function renderAll(){
   }
   try{ pushSnapshot(); }catch(e){}
   try{ if(typeof netPushState === 'function' && netIsHostEngine()) netPushState(); }catch(e){}
+  try{ saveTempGame(); }catch(e){}
+  try{ updateFabAttn(); }catch(e){}
 }
 function gearIcons(p){
   const out = [];
   if(p.weapon && ITEMS[p.weapon]) out.push(sprTag(itemIcon(p.weapon)||'fist', 22) + ' ' + ITEMS[p.weapon].name);
   else out.push(sprTag('fist', 22) + ' 空手');
   const ws = heldWeapons(p);
-  if(ws.length>1) out.push(`<span style="color:var(--acc2);font-size:11px">（可换：${ws.filter(k=>k!==p.weapon).map(k=>ITEMS[k].name).join('/')}）</span>`);
+  if(ws.length>1) out.push(`<span class="mo-hide" style="color:var(--acc2);font-size:11px">（可换：${ws.filter(k=>k!==p.weapon).map(k=>ITEMS[k].name).join('/')}）</span>`);
   if(p.armor){
     const nm = ITEMS[p.armor].name + (armorActive(p) ? `(${p.armorCharges})` : '(已破损)');
     out.push(sprTag(itemIcon(p.armor), 22) + ' ' + nm);
@@ -3364,7 +3601,7 @@ function renderPlayers(){
       <div class="hpbar">${blocks}</div>
       <div class="stat">
         <span class="k">生命 / 护甲</span><span class="v">${hpStr(p)}</span>
-        <span class="k">行动点</span><span class="v">${sprTag('coin',18)} ${p.ap}<span style="color:var(--dim);font-size:11px">（本回合内有效）</span></span>
+        <span class="k">行动点</span><span class="v">${sprTag('coin',18)} ${p.ap}<span class="mo-hide" style="color:var(--dim);font-size:11px">（本回合内有效）</span></span>
         <span class="k">进程</span><span class="v">${sprTag(PROG_ICON[p.prog],22)} ${PROG_NAME[p.prog]}</span>
         <span class="k">装备</span><span class="v">${gearIcons(p)}</span>
         <span class="k">背包</span><span class="v">${inv}</span>
@@ -3399,6 +3636,8 @@ function showScreen(id){
   if(id==='game' && setupWrap) setupWrap.classList.add('hidden');
   if(id!=='game' && setupWrap) setupWrap.classList.remove('hidden');
   if(id==='screen-start') refreshStartInfo();
+  try{ document.body.classList.toggle('playing', id==='game'); }catch(e){}
+  try{ updateBackBtn(); updateFabVisibility(); }catch(e){}
 }
 function markActive(sel, attr, val){
   document.querySelectorAll(sel).forEach(b=>b.classList.toggle('pri', b.getAttribute(attr)===String(val)));
@@ -3867,6 +4106,10 @@ on('clearProgBtn', ()=>{
   alert('已清除进度存档：下次开局所有玩家都从「空手」开始。');
 });
 on('mSetting', ()=>{ sfx.click(); showScreen('screen-setting'); refreshProgInfo(); });
+on('mResume', ()=>{ try{ sfx.click(); }catch(e){} resumeTempGame(); });
+on('backBtn', ()=>{ try{ sfx.click(); }catch(e){} onBackBtn(); });
+on('fab', ()=>{ try{ sfx.click(); }catch(e){} fabToggle(); });
+on('fabClose', ()=>{ try{ sfx.click(); }catch(e){} fabToggle(false); });
 on('mRules', ()=>{ sfx.click(); renderRules(); showScreen('screen-rules'); });
 
 on('sBack', ()=>{ sfx.click(); showScreen('screen-main'); });
@@ -4125,7 +4368,8 @@ const Net = {
       .then(d=>{ if(d.ok) this.applyRoom(d); else this.status('<span style="color:var(--red)">'+esc(d.err||'操作失败')+'</span>');
         this.renderAll(); return d; }).catch(()=>({ok:false}));
   },
-  leave(){
+  leave(skipConfirm){
+    if(!skipConfirm && this.active && !confirm('退出联机房间？\n\n多人对局不会保存进度，退出后这一局就散了。')) return;
     const code = this.code, me = this.youId;
     this.stop();
     this.active = false; this.started = false; this.spectating = false; this.launched = false;
@@ -4157,6 +4401,138 @@ const Net = {
   render(){ renderLobby(); },
   renderAll(){ try{ this.render(); }catch(e){} try{ window.renderAll(); }catch(e){} },
 };
+
+/* =========================================================================
+   手机端交互：悬浮球（行动抽屉）+ 左上角返回键
+   ========================================================================= */
+function fabToggle(force){
+  const sheet = document.getElementById('fabSheet');
+  const fab = document.getElementById('fab');
+  if(!sheet || !fab) return;
+  const open = (force === undefined) ? !sheet.classList.contains('open') : !!force;
+  sheet.classList.toggle('open', open);
+  fab.textContent = open ? '✕' : '＋';
+  if(open) fab.classList.remove('attn');
+}
+function updateFabAttn(){
+  const fab = document.getElementById('fab');
+  const sheet = document.getElementById('fabSheet');
+  if(!fab || !sheet) return;
+  const waiting = !!pendingChoice && !sheet.classList.contains('open');
+  fab.classList.toggle('attn', waiting);
+}
+function updateFabVisibility(){
+  const fab = document.getElementById('fab');
+  const sheet = document.getElementById('fabSheet');
+  const inGame = !!document.getElementById('game') && !document.getElementById('game').classList.contains('hidden');
+  const show = inGame && isMobileUI();
+  if(fab) fab.classList.toggle('hidden', !show);
+  if(!show && sheet) sheet.classList.remove('open');
+  updateFabAttn();
+}
+/* 左上角返回键 */
+function updateBackBtn(){
+  const b = document.getElementById('backBtn');
+  if(!b) return;
+  const scr = (typeof currentScreen !== 'undefined') ? currentScreen : 'screen-main';
+  b.classList.toggle('hidden', scr === 'screen-main');
+}
+function quitGame(){
+  const net = (typeof Net !== 'undefined' && Net.active);
+  const msg = net
+    ? '退出联机房间？\n\n多人对局不会保存进度，退出后这一局就散了。'
+    : '退出这一局？\n\n单人会留一份临时存档，可以从主菜单「继续上次对局」接着打（结算或开新局才会清掉）。';
+  if(!confirm(msg)) return;
+  try{ saveTempGame(true); }catch(e){}
+  if(net){ try{ Net.leave(); }catch(e){} }
+  if(G) G.over = true;              /* 让旧的主循环自行退出 */
+  try{ gameLoopStop(); }catch(e){}
+  showScreen('screen-main');
+  updateBackBtn(); updateFabVisibility(); refreshResumeBtn();
+}
+function onBackBtn(){
+  const scr = (typeof currentScreen !== 'undefined') ? currentScreen : 'screen-main';
+  if(scr === 'game'){ quitGame(); return; }
+  if(scr !== 'screen-main'){ showScreen('screen-main'); updateBackBtn(); return; }
+}
+/* =========================================================================
+   临时存档（只存单机；多人不存）
+   ========================================================================= */
+const TEMP_KEY = 'mcTempSave';
+function tempSaveAllowed(){
+  if(!G || G.over) return false;
+  if(typeof Net !== 'undefined' && Net.active) return false;
+  if(typeof NetPlay !== 'undefined' && NetPlay.role) return false;
+  return true;
+}
+function saveTempGame(force){
+  if(!tempSaveAllowed()) return;
+  const now = Date.now();
+  if(!force && now - (saveTempGame._last || 0) < 1500) return;
+  saveTempGame._last = now;
+  try{
+    localStorage.setItem(TEMP_KEY, JSON.stringify({
+      v: 1, at: now,
+      G: {
+        players: G.players, round: G.round, dist: G.dist, turnOwner: G.turnOwner,
+        startedAt: G.startedAt, logLines: (G.logLines || []).slice(-60),
+      }
+    }));
+    refreshResumeBtn();
+  }catch(e){}
+}
+function clearTempGame(){
+  try{ localStorage.removeItem(TEMP_KEY); }catch(e){}
+  refreshResumeBtn();
+}
+function loadTempGame(){
+  try{
+    const d = JSON.parse(localStorage.getItem(TEMP_KEY) || 'null');
+    if(!d || !d.G || !Array.isArray(d.G.players) || !d.G.players.length) return null;
+    return d;
+  }catch(e){ return null; }
+}
+function refreshResumeBtn(){
+  const b = document.getElementById('mResume');
+  if(!b) return;
+  const d = loadTempGame();
+  if(d){
+    b.classList.remove('hidden');
+    b.textContent = '⏵ 继续上次对局（第 ' + (d.G.round || 1) + ' 回合 · ' + (d.G.players.length) + ' 人）';
+  }else{
+    b.classList.add('hidden');
+  }
+}
+function resumeTempGame(){
+  const d = loadTempGame();
+  if(!d){ appToast('没有可继续的对局'); return; }
+  const g = d.G;
+  runSeq += 1;
+  G = {
+    players: g.players, round: g.round || 1, dist: g.dist || {}, roundOrder: [],
+    over: false, turnOwner: null, progSnap: {}, runId: runSeq,
+    startedAt: g.startedAt || Date.now(), logLines: (g.logLines || []).slice(-60),
+  };
+  for(const p of G.players){
+    p.isLocal = !!p.isHuman;
+    if(!p.st) p.st = {ap:0, dmgMax:0, heal:0, kills:0};
+  }
+  /* 距离表兜底重建 */
+  if(!G.dist || !Object.keys(G.dist).length){
+    G.dist = {};
+    G.players.forEach(a=>{ G.dist[a.id] = {}; G.players.forEach(b=>{ G.dist[a.id][b.id] = a===b?0:1; }); });
+  }
+  pendingChoice = null; pendingChoiceFor = null;
+  showScreen('game');
+  try{ renderGuestLog(G.logLines); }catch(e){}
+  log('⏵ 已继续上次的对局（临时存档）—— 结算或开新单机局才会清掉它。','l-good');
+  renderAll();
+  updateBackBtn(); updateFabVisibility();
+  gameLoop();
+}
+/* 旧循环停止用：把 over 置位即可，gameLoop 每轮都会检查 */
+function gameLoopStop(){ if(G) G.over = true; }
+
 /* =========================================================================
    联机对局同步（房主权威）
    -------------------------------------------------------------------------
@@ -4305,6 +4681,7 @@ function netSerializeGame(){
     phase: (document.getElementById('phasePill') || {}).textContent || '',
     apPerWin,
     mode: gameMode,
+    startedAt: G.startedAt || Date.now(),
     players: G.players.map(p=>Object.assign({}, p)),
     log: (G.logLines || []).slice(-90),
   };
@@ -4338,6 +4715,7 @@ function netGuestApplyState(st){
     turnOwner: st.turnOwner,
     progSnap: {},
     runId,
+    startedAt: st.startedAt || Date.now(),
     logLines: st.log || [],
     guest: true,
   };
@@ -4379,6 +4757,22 @@ function netGuestResult(){
     const ov = document.getElementById('overlay');
     const box = document.getElementById('overlayBox');
     if(!ov || !box) return;
+    if(typeof settlementHTML === 'function'){
+      box.innerHTML = settlementHTML(win);
+      box.classList.add('settlebox');
+      ov.classList.add('settle');
+      ov.classList.remove('hidden');
+      document.body.classList.add('modal-open');
+      const c1 = document.getElementById('spClose');
+      const c2 = document.getElementById('spClose2');
+      const close = ()=>{ ov.classList.add('hidden'); ov.classList.remove('settle'); box.classList.remove('settlebox');
+                          document.body.classList.remove('modal-open'); };
+      if(c1) c1.onclick = close;
+      if(c2) c2.onclick = close;
+      const ab = document.getElementById('againBtn');
+      if(ab) ab.onclick = ()=>{ location.reload(); };
+      return;
+    }
     box.innerHTML = `<h3 style="font-size:22px;margin:0 0 8px">${win ? '🏆 你们赢了！' : '💀 这一局输了'}</h3>
       <p style="font-size:13.5px;color:var(--dim);line-height:1.8">共进行 ${G.round} 个回合（房主的引擎结算）。</p>
       <div class="row" style="justify-content:center;margin-top:14px">
@@ -4805,7 +5199,7 @@ function setAutoPlayerPublic(fn){ autoPlayer = fn; }
    - 服务器根目录的 version.json 是唯一真相：改版本号就能通知所有客户端
    - 发现更新 → 右下角弹窗（含更新说明）；点「立即更新」清缓存 + 更新 SW + 重载
    ========================================================================= */
-const APP_VERSION = '1.7.2';
+const APP_VERSION = '1.7.3';
 let __verChecking = false;
 function parseVer(v){ return String(v||'0').split(/[.\-+_]/).slice(0,3).map(n=>parseInt(n,10)||0); }
 function verNewer(a, b){

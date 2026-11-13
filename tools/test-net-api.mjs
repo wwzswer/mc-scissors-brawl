@@ -71,7 +71,8 @@ const alive = await get('/api/ping');
 ok(alive.ok === true, '被坏请求打过之后服务仍然存活', alive.version);
 
 const v = await get('/api/version');
-ok(v.ok && v.version==='1.7.0', '版本接口可用', v.version);
+const expectVer = JSON.parse(await (await import('node:fs/promises')).readFile(new URL('../version.json', import.meta.url), 'utf8')).version;
+ok(v.ok && v.version === expectVer, '版本接口与 version.json 一致', {api:v.version, file:expectVer});
 const vj = await get('/version.json');
 ok((vj.version||'').length>0, 'version.json 可取到', vj.version);
 

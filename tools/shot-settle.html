@@ -1,0 +1,21 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>settle</title>
+<style>html,body{margin:0;background:#0e1116}iframe{border:0;display:block;width:1100px;height:820px}</style></head>
+<body><iframe id="f" src="/index.html"></iframe>
+<script>
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const waitMCG=w=>new Promise(res=>{const t=setInterval(()=>{if(w&&w.MCGame){clearInterval(t);res(w.MCGame);}},50);setTimeout(()=>{clearInterval(t);res(null);},9000);});
+(async()=>{
+  const f=document.getElementById('f'); const M=await waitMCG(f.contentWindow); const W=f.contentWindow;
+  M.__api.setFastTiming(); M.__api.setInstantRps();
+  M.__api.setAutoPlayer((p,o)=>{o=o||[];return o.find(x=>x.type==='attack')||o.find(x=>x.type==='shop_progress')||{type:'pass'};});
+  M.start({silent:false, seed:911, roster:[
+    {name:'小明',human:true,team:0},
+    {name:'史蒂夫',human:false,team:1,diff:'normal'},
+    {name:'苦力怕',human:false,team:1,diff:'hard'},
+  ]});
+  for(let i=0;i<60;i++){ await sleep(200); const G=M.state(); if(G&&G.over) break; }
+  if(M.state() && !M.state().over) W.endGame(true);
+  await sleep(500);
+  document.title='SHOT-READY';
+})();
+</script></body></html>
