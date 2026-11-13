@@ -215,7 +215,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#0d1219;padding:1px 
 </head>
 <body>
 <div id="app">
-  <h1>方块猜拳战场 <span class="mono">MC 二创桌游 · 基础版 v1.7.1 · <b id="buildTag" style="color:var(--acc2)">双人同步 · 手机版 · 自动更新</b></span></h1>
+  <h1>方块猜拳战场 <span class="mono">MC 二创桌游 · 基础版 v1.7.2 · <b id="buildTag" style="color:var(--acc2)">双人同步 · 手机版 · 自动更新</b></span></h1>
   <div class="sub">猜拳夺 AP → 升进程 / 造装备 / 收补给 → 相互战斗。每位玩家 <b>4 点生命</b>，猜拳获胜的 AP 可在设置里选 <b>1 或 2</b>（判定不产生 AP）。</div>
 
   <!-- ===== SETUPUI:BEGIN ===== -->
@@ -4805,7 +4805,7 @@ function setAutoPlayerPublic(fn){ autoPlayer = fn; }
    - 服务器根目录的 version.json 是唯一真相：改版本号就能通知所有客户端
    - 发现更新 → 右下角弹窗（含更新说明）；点「立即更新」清缓存 + 更新 SW + 重载
    ========================================================================= */
-const APP_VERSION = '1.7.1';
+const APP_VERSION = '1.7.2';
 let __verChecking = false;
 function parseVer(v){ return String(v||'0').split(/[.\-+_]/).slice(0,3).map(n=>parseInt(n,10)||0); }
 function verNewer(a, b){

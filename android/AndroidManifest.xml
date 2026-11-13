@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.dsh.mcbrawl"
-    android:versionCode="10701"
-    android:versionName="1.7.1">
+    android:versionCode="10702"
+    android:versionName="1.7.2">
 
-    <!-- 目标 SDK 34：Android 15/16 只对 targetSdk>=35 的 App 强制 edge-to-edge，
-         用手动 WindowInsets 处理系统栏，兼容性更稳 -->
-    <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
+    <!-- targetSdk 35：贴合 Android 15；edge-to-edge 用主题开关 + 手动 WindowInsets 兜底
+         minSdk 24：避开厂商安装器对老 minSdk 包的风控/兼容性拦截 -->
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
@@ -18,7 +19,10 @@
         android:hardwareAccelerated="true"
         android:allowBackup="true"
         android:supportsRtl="true"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:appCategory="game"
+        android:isGame="true"
+        android:extractNativeLibs="false">
 
         <activity
             android:name=".MainActivity"

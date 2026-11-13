@@ -63,7 +63,7 @@ echo "== 3/7 aapt2 compile =="
 echo "== 4/7 aapt2 link（含 assets）=="
 LINK_ARGS=(-o "$HERE/build/apk/base.apk" -I "$ANDROID_JAR"
   --manifest "$HERE/AndroidManifest.xml" -A "$HERE/assets"
-  --java "$HERE/build/gen" --min-sdk-version 21 --target-sdk-version 35
+  --java "$HERE/build/gen" --min-sdk-version 24 --target-sdk-version 35
   --version-code "$VERSION_CODE" --version-name "$VERSION" --auto-add-overlay)
 if [ -f "$HERE/build/res/resources.zip" ]; then
   "$BT/aapt2.exe" link "${LINK_ARGS[@]}" "$HERE/build/res/resources.zip"
@@ -91,7 +91,7 @@ if [ ! -f "$KS" ]; then
 fi
 "$BT/zipalign.exe" -f -p 4 "$HERE/build/apk/base.apk" "$HERE/build/apk/aligned.apk"
 "$JAVA" -jar "$BT/lib/apksigner.jar" sign --ks "$KS" --ks-pass pass:mcbrawl \
-  --key-pass pass:mcbrawl --min-sdk-version 21 --out "$OUT_APK" "$HERE/build/apk/aligned.apk"
+  --key-pass pass:mcbrawl --min-sdk-version 21 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --v4-signing-enabled true --out "$OUT_APK" "$HERE/build/apk/aligned.apk"
 
 echo "== 7/7 校验 =="
 "$JAVA" -jar "$BT/lib/apksigner.jar" verify -v "$OUT_APK" | head -5
