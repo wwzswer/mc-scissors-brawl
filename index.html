@@ -344,7 +344,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#0d1219;padding:1px 
 <body>
 <button id="backBtn" class="backbtn hidden" aria-label="返回">‹</button>
 <div id="app">
-  <h1>方块猜拳战场 <span class="mono">MC 二创桌游 · 基础版 v1.7.4 · <b id="buildTag" style="color:var(--acc2)">悬浮球 · 存档 · 主动结算</b></span></h1>
+  <h1>方块猜拳战场 <span class="mono">MC 二创桌游 · 基础版 v1.7.5 · <b id="buildTag" style="color:var(--acc2)">悬浮球 · 存档 · 机器人适配</b></span></h1>
   <div class="sub">猜拳夺 AP → 升进程 / 造装备 / 收补给 → 相互战斗。每位玩家 <b>4 点生命</b>，猜拳获胜的 AP 可在设置里选 <b>1 或 2</b>（判定不产生 AP）。</div>
 
   <!-- ===== SETUPUI:BEGIN ===== -->
@@ -2340,7 +2340,14 @@ function tabOfOption(o){
   return 'craft';                       /* 补给类（面包/金苹果/药水） */
 }
 
-function isMobileUI(){ return window.innerWidth <= 760; }
+function isMobileUI(){ return (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth <= 760 : false; }
+/* 无 DOM 环境（比如 QQ 机器人把游戏跑在 Node 沙箱里）也要能加载：事件注册一律走这里 */
+function onWindow(ev, fn){
+  try{ if(typeof window !== 'undefined' && window && typeof window.addEventListener === 'function') window.addEventListener(ev, fn); }catch(e){}
+}
+function onDocument(ev, fn){
+  try{ if(typeof document !== 'undefined' && document && typeof document.addEventListener === 'function') document.addEventListener(ev, fn); }catch(e){}
+}
 /* 行动面板的宿主：手机 → 悬浮球抽屉；桌面 → 行动区卡片 */
 function actionHostEl(){
   if(isMobileUI()){
@@ -4470,8 +4477,8 @@ function updateFabVisibility(){
   if(!show && sheet) sheet.classList.remove('open');
   updateFabAttn();
 }
-window.addEventListener('resize', ()=>{ try{ updateFabVisibility(); }catch(e){} });
-window.addEventListener('orientationchange', ()=>{ setTimeout(()=>{ try{ updateFabVisibility(); }catch(e){} }, 200); });
+onWindow('resize', ()=>{ try{ updateFabVisibility(); }catch(e){} });
+onWindow('orientationchange', ()=>{ setTimeout(()=>{ try{ updateFabVisibility(); }catch(e){} }, 200); });
 /* 左上角返回键 */
 function updateBackBtn(){
   const b = document.getElementById('backBtn');
@@ -5241,7 +5248,7 @@ function setAutoPlayerPublic(fn){ autoPlayer = fn; }
    - 服务器根目录的 version.json 是唯一真相：改版本号就能通知所有客户端
    - 发现更新 → 右下角弹窗（含更新说明）；点「立即更新」清缓存 + 更新 SW + 重载
    ========================================================================= */
-const APP_VERSION = '1.7.4';
+const APP_VERSION = '1.7.5';
 let __verChecking = false;
 function parseVer(v){ return String(v||'0').split(/[.\-+_]/).slice(0,3).map(n=>parseInt(n,10)||0); }
 function verNewer(a, b){
@@ -5269,6 +5276,7 @@ function appToast(msg){
 const isAndroidApp = (()=>{ try{ return /appassets\.androidplatform\.net/.test(location.hostname); }catch(e){ return false; } })();
 function checkUpdate(manual){
   if(__verChecking) return Promise.resolve(null);
+  if(typeof fetch !== 'function') return Promise.resolve(null);   /* 无网络环境（Node 沙箱）直接跳过 */
   __verChecking = true;
   const base = (typeof apiBase === 'function' ? apiBase() : '');
   const url = base + '/version.json?t=' + Date.now();
@@ -5326,7 +5334,7 @@ function applyUpdate(){
   try{
     setTimeout(()=>checkUpdate(false), 2500);
     setInterval(()=>checkUpdate(false), 5 * 60 * 1000);
-    document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checkUpdate(false); });
+    onDocument('visibilitychange', ()=>{ try{ if(!document.hidden) checkUpdate(false); }catch(e){} });
   }catch(e){}
 })();
 
@@ -5386,7 +5394,7 @@ function showDiag(){
     const host = location.hostname;
     const secure = location.protocol === 'https:' || host === 'localhost' || host === '127.0.0.1' || /\.localhost$/.test(host);
     if('serviceWorker' in navigator && secure){
-      window.addEventListener('load', ()=>{
+      onWindow('load', ()=>{
         navigator.serviceWorker.register('sw.js').catch(()=>{});
       });
     }
@@ -5396,7 +5404,7 @@ function showDiag(){
       return;
     }
     let deferred = null;
-    window.addEventListener('beforeinstallprompt', e=>{
+    onWindow('beforeinstallprompt', e=>{
       e.preventDefault();
       deferred = e;
       if(btn){ btn.style.display = ''; }
@@ -5430,7 +5438,7 @@ function showDiag(){
         say('想当 App 用？点「📲 安装到桌面」（Chrome/Edge 会弹安装窗）。');
       }
     }
-    window.addEventListener('appinstalled', ()=>{ say('已安装 ✔ 桌面 / 开始菜单里找「猜拳战场」。'); if(btn) btn.style.display='none'; });
+    onWindow('appinstalled', ()=>{ say('已安装 ✔ 桌面 / 开始菜单里找「猜拳战场」。'); if(btn) btn.style.display='none'; });
   }catch(e){}
 })();
 

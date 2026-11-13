@@ -68,6 +68,19 @@ GET  /api/room/<码>/peek                     只读：座位/队伍/局面 + �
 最近：第 7 回合 ⏎ 房主小明 用 石剑 命中 朋友小红 -1 血
 ```
 
+## 给 QQ 机器人复用同一份规则（headless）
+
+`index.html` 里的引擎也能在**纯 Node 环境**（没有 DOM）里跑：QQ 机器人那边的 MCP server
+（`qq-bridge/src/mcp-mc-brawl.js`）就是用 `vm` + 假 DOM 把这一整个 script 加载起来，然后调 `MCGame`。
+
+为此代码里做了两件事（踩过坑）：
+
+1. **事件注册一律走 `onWindow()` / `onDocument()` 包装** —— 以前直接写 `window.addEventListener(...)`，
+   在 `window = {}` 的沙箱里会抛 `window.addEventListener is not a function`，表现为「开局失败」。
+2. **`fetch` 不存在时跳过版本检查** —— 沙箱不联网，`checkUpdate()` 里先判断 `typeof fetch`。
+
+自检：`node qq-bridge/src/mcp-mc-brawl.js --selftest`（加载游戏 → 开局 → 推若干轮 → 打印局面）。
+
 ## 目录
 
 ```
