@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>net-play-test</title>
+<style>body{background:#0b0f14;color:#e8ecf5;font:13px/1.7 Consolas,monospace;padding:14px}
+pre{white-space:pre-wrap}iframe{width:560px;height:420px;border:1px solid #333;vertical-align:top}</style></head>
+<body>
+<pre id="results">running…</pre>
+<iframe id="A" src="/index.html"></iframe>
+<iframe id="B" src="/index.html"></iframe>
+<script>
+const out=[]; let fails=0;
+const log=(ok,msg,extra)=>{ if(ok===null) out.push('… '+msg); else { if(!ok) fails++; out.push((ok?'✔ ':'✘ ')+msg+(extra!==undefined?'  '+JSON.stringify(extra):'')); } document.getElementById('results').textContent=out.join('\n'); };
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const waitMCG=w=>new Promise(res=>{ const t=setInterval(()=>{ if(w&&w.MCGame){clearInterval(t);res(w.MCGame);} },50); setTimeout(()=>{clearInterval(t);res(null);},9000); });
+
+window.addEventListener('load', async ()=>{
+  try{
+    const fA=document.getElementById('A'), fB=document.getElementById('B');
+    const A=await waitMCG(fA.contentWindow), B=await waitMCG(fB.contentWindow);
+    if(!A||!B){ log(false,'页面未就绪'); throw new Error('no MCGame'); }
+    const WA=fA.contentWindow, WB=fB.contentWindow, NetA=A.__api.Net, NetB=B.__api.Net;
+
+    /* 让两边都跑快一点、人类操作自动化 */
+    A.__api.setFastTiming(); A.__api.setInstantRps();
+    A.__api.setAutoPlayer((p,opts)=>{
+      const o=opts||[];
+      return o.find(x=>x.type==='attack')||o.find(x=>x.type==='shop_progress')
+          ||o.find(x=>x.type==='craftShopItem')||o.find(x=>x.type==='move')||{type:'pass'};
+    });
+
+    /* 房主建房 */
+    A.showScreen('screen-net');
+    await NetA.create('房主小明', {mode:'2v2'});
+    const code = NetA.code;
+    log(/^[A-Z0-9]{9}$/.test(code), '房主建房成功', code);
+
+    /* 客人加入 */
+    B.showScreen('screen-net');
+    await NetB.join(code, '朋友小红');
+    log(NetB.code === code, '客人用房间码加入成功');
+    await sleep(800);
+    log(NetA.slots.filter(Boolean).length === 2 && NetB.slots.filter(Boolean).length === 2, '两边都看到 2 个座位');
+    const guestTeamA = NetA.slots.find(s=>s && s.kind==='human' && !s.isYou);
+    log(guestTeamA && guestTeamA.team === 1, '客人默认落在敌对队（队伍 B）', guestTeamA && guestTeamA.team);
+
+    /* 房主补一个困难人机到空位 */
+    await NetA.fillBot(2);
+    await NetA.updateBot(2, {diff:'hard', team:1});
+    await sleep(700);
+    log(NetA.slots[2] && NetA.slots[2].kind==='bot', '房主加了人机（3 号座位）');
+    log(NetB.slots[2] && NetB.slots[2].kind==='bot' && NetB.slots[2].diff==='hard',
+        '客人端同步看到这个人机与强度（轮询生效）', NetB.slots[2] && NetB.slots[2].diff);
+
+    /* 房主开局 */
+    await NetA.start();
+    await sleep(2500);
+    const G = A.state();
+    log(!!G, '房主端已开局（有对局状态）');
+    if(G){
+      log(G.players.length === 3, '名单 = 房主 + 客人座 + 人机', G.players.map(p=>p.name));
+      const remote = G.players.find(p=>/远端/.test(p.name));
+      log(!!remote && remote.isHuman === false, '客人的座位在本机由 AI 代打（名字带「远端」）', remote && remote.name);
+      log(G.players.filter(p=>p.isHuman).length === 1, '本机只有 1 个真人玩家');
+      const teams = new Set(G.players.map(p=>p.team));
+      log(teams.size === 2, '队伍与房间座位一致（2 队）', [...teams]);
+      log(G.players.every(p=>typeof p.diff === 'string'), '每个 AI 都带独立强度',
+          G.players.filter(p=>!p.isHuman).map(p=>p.name+':'+p.diff));
+    }
+    /* 客人端应当进观战 */
+    log(NetB.spectating === true, '客人端进入观战模式');
+    const spec = fB.contentDocument.getElementById('netSpectate');
+    log(spec && !spec.classList.contains('hidden'), '客人端显示观战面板');
+    log(spec && /观战/.test(spec.textContent), '观战面板标题正确', spec && spec.textContent.slice(0,24));
+    /* 房主上报局面后客人能看到 */
+    await sleep(1200);
+    const specAfter = fB.contentDocument.getElementById('netSpectate');
+    log(specAfter && /回合/.test(specAfter.textContent), '客人端能看到局面（回合/血量）',
+        specAfter && (specAfter.textContent.match(/第\s*\d+\s*回合/)||['(暂无)'])[0]);
+    /* peek 战报 */
+    const peek = await fetch('/api/room/'+code+'/peek').then(r=>r.json());
+    log(peek.ok && /🏟/.test(peek.brief), 'peek 战报可用（QQ 机器人读这个）');
+    log(peek.slots.filter(Boolean).length === 3 && peek.teams === 2, '战报座位/队伍正确',
+        {people: peek.slots.filter(Boolean).length, teams: peek.teams});
+    console.log('--- brief ---\n' + peek.brief);
+  }catch(e){
+    log(false, '异常：'+(e&&e.message), (e&&e.stack||'').slice(0,180));
+  }
+  out.push(''); out.push(fails===0?'NET-PLAY ALL PASS':('NET-PLAY FAILURES: '+fails));
+  document.getElementById('results').textContent=out.join('\n');
+  document.title = fails===0 ? 'PLAY-ALL-PASS' : ('PLAY-FAIL-'+fails);
+});
+</script></body></html>

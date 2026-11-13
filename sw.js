@@ -8,7 +8,7 @@
      · 跨域请求        直接放行
    发版：改动 index.html 后把 VERSION 加一，旧缓存会在 activate 时清掉
    ========================================================================= */
-const VERSION = 'mc-brawl-v1.6.0-2';
+const VERSION = 'mc-brawl-v1.7.0-1';
 const CORE = [
   './',
   './index.html',

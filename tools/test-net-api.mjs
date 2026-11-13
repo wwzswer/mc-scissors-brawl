@@ -1,4 +1,4 @@
-const B = 'http://127.0.0.1:8803';
+const B = process.env.BASE || 'http://127.0.0.1:8787';
 const post = (p, b) => fetch(B+p, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(b||{})}).then(r=>r.json());
 const get  = (p) => fetch(B+p).then(r=>r.json());
 let fails = 0;
@@ -63,6 +63,12 @@ r = await post(`/api/room/${code}/leave`, {id:friend});
 ok(r.ok, '离开房间');
 p = await get(`/api/room/${code}/peek`);
 ok(p.slots.filter(Boolean).length===2, '剩 2 人（人机还在）', p.slots.filter(Boolean).map(s=>s.name));
+
+/* 回归：非法百分号编码的 URL 不能把服务打死（历史上这里崩过一次） */
+const bad = await fetch(B + '/dist/%E0%A4%A').then(r=>r.status).catch(()=>'net-error');
+ok(bad === 400, '非法编码的 URL 返回 400 而不是崩服务', bad);
+const alive = await get('/api/ping');
+ok(alive.ok === true, '被坏请求打过之后服务仍然存活', alive.version);
 
 const v = await get('/api/version');
 ok(v.ok && v.version==='1.7.0', '版本接口可用', v.version);

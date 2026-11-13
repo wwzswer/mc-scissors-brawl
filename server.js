@@ -154,7 +154,14 @@ const MIME = {'.html':'text/html; charset=utf-8','.js':'text/javascript; charset
   '.webmanifest':'application/manifest+json; charset=utf-8','.svg':'image/svg+xml',
   '.apk':'application/vnd.android.package-archive'};
 function serveStatic(req, res, urlPath){
-  let rel = decodeURIComponent(urlPath.split('?')[0]);
+  let rel;
+  try{
+    rel = decodeURIComponent(urlPath.split('?')[0]);
+  }catch(e){
+    /* 非法百分号编码（比如 curl 直接把中文塞进 URL）不能把整个服务搞崩 */
+    res.writeHead(400, {'Content-Type':'text/plain; charset=utf-8'});
+    return res.end('400 bad url');
+  }
   if(rel === '/' || rel === '') rel = '/index.html';
   const file = path.normalize(path.join(ROOT, rel));
   if(!file.startsWith(ROOT)){ res.writeHead(403); res.end('forbidden'); return; }
@@ -167,7 +174,7 @@ function serveStatic(req, res, urlPath){
 }
 
 /* ------------------------------ 路由 ------------------------------ */
-const server = http.createServer(async (req, res)=>{
+async function handleRequest(req, res){
   const url = req.url || '/';
   if(req.method === 'OPTIONS'){
     res.writeHead(204, {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type',
@@ -367,6 +374,17 @@ const server = http.createServer(async (req, res)=>{
     return;
   }
   serveStatic(req, res, url);
+}
+
+/* 任何 handler 异常都只回 500，不让进程退出（历史上一个坏 URL 就能把服务打死） */
+const server = http.createServer((req, res)=>{
+  handleRequest(req, res).catch(err => {
+    try{
+      console.error('[请求异常]', req.method, req.url, err && err.message);
+      if(!res.headersSent) json(res, {ok:false, err:String(err && err.message || err)}, 500);
+      else res.end();
+    }catch(e){ try{ res.end(); }catch(_){} }
+  });
 });
 
 /* ------------------------------ 自动打开浏览器 ------------------------------ */
