@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>完整循环：判定平局后能否继续行动</title>
+<style>body{background:#0d1017;color:#dfe6f2;font-family:ui-monospace,Consolas,monospace;padding:12px}
+pre{white-space:pre-wrap;font-size:12.5px;line-height:1.5}
+iframe{width:1100px;height:300px;border:1px solid #26304a;border-radius:10px;margin-top:8px}</style>
+</head>
+<body>
+<pre id="out">运行中…</pre>
+<iframe id="fr" src="/index.html"></iframe>
+<script>
+const lines=[]; const say=(s,c)=>{ lines.push(c?`[${c}] `+s:s); document.getElementById('out').textContent=lines.join('\n'); };
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+(async ()=>{
+  let bad=0;
+  try{
+    const fr=document.getElementById('fr');
+    await new Promise(r=>{ fr.onload=r; setTimeout(r,5000); });
+    await wait(400);
+    const W=fr.contentWindow, D=fr.contentDocument, MC=W.MCGame;
+    const qa=s=>Array.from(D.querySelectorAll(s));
+    const ev=c=>W.eval(c);
+
+    say('【1】真实开局：自动出拳；自动玩家优先用打火石攻击（触发判定）');
+    MC.__api.setFastTiming();
+    MC.__api.setAutoPlayer((p,opts)=>{
+      const o = opts||[];
+      const flint = o.find(x=>x.type==='attack' && x.key==='flint');
+      if(flint) return flint;
+      const atk = o.find(x=>x.type==='attack');
+      if(atk) return atk;
+      const mv = o.find(x=>x.type==='move' && x.dir===-1);
+      if(mv) return mv;
+      const up = o.find(x=>x.type==='shop_progress');
+      if(up) return up;
+      const cr = o.find(x=>x.type==='craftShopItem');
+      if(cr) return cr;
+      return {type:'pass'};
+    });
+    MC.start({enemyCount:1, diff:'normal', auto:true, mode:'1v1', name:'循环测试'});
+    await wait(300);
+    const G = MC.state(), me = G.players[0];
+    me.prog = 3; me.ap = 30; me.itemPts = {};
+    MC.__api.addItem(me, 'flint', 5);
+    ev('globalThis.__rpsLog = []');
+
+    say('');
+    say('【2】跑一段时间，期间若出现闪避选择框就点「赌一把」');
+    let dodges = 0, clicks = 0;
+    for(let i=0;i<260;i++){
+      const g = qa('#actionbar button').find(b=>b.textContent.includes('赌一把'));
+      const d = qa('#actionbar button').find(b=>b.textContent.includes('直接闪避'));
+      if(g){ g.click(); dodges++; clicks++; }
+      else if(d){ d.click(); dodges++; clicks++; }
+      await wait(110);
+      if(G.over) break;
+    }
+    say(`  处理闪避选择框 ${dodges} 次`, dodges>0?'ok':'warn');
+    say(`  对局是否结束: ${G.over}｜回合 ${G.round}`);
+
+    say('');
+    say('【3】关键：判定之后行动面板是否恢复正常可操作');
+    const bar = qa('#actionbar button').map(b=>b.textContent.trim());
+    const stillDodge = bar.some(x=>x.includes('赌一把')||x.includes('直接闪避'));
+    const hasAction = bar.some(x=>/靠近|攻击|一拳|打火石|腐肉|制作|结束回合|进程|投入/.test(x));
+    say(`  残留闪避按钮: ${stillDodge}`, !stillDodge?'ok':'bad');
+    if(stillDodge) bad++;
+    say(`  有正常行动按钮: ${hasAction}`, hasAction?'ok':'bad');
+    if(!hasAction) bad++;
+    say(`  当前面板: ${bar.map(x=>x.slice(0,18)).join(' | ')||'(空)'}`);
+
+    say('');
+    say('【4】判定流程日志尾部');
+    const trace = ev('JSON.stringify((globalThis.__rpsLog||[]).slice(-14))');
+    try{ JSON.parse(trace).forEach((l,i)=>say('  '+(i+1)+'. '+String(l).replace(/<[^>]+>/g,''))); }catch(e){ say('  '+trace); }
+
+    say('');
+    const err = ev('globalThis.__judgeErr||null');
+    if(err) say('异常: '+err, 'bad');
+    if(bad===0) say('✅ 判定后行动面板正常，未卡死', 'ok');
+    else say(`❌ 有 ${bad} 项异常`, 'bad');
+  }catch(e){ say('异常: '+(e&&e.stack?e.stack:e), 'bad'); }
+  document.title='LOOP-DONE';
+})();
+</script>
+</body>
+</html>

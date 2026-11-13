@@ -1,0 +1,20 @@
+# 依赖/产物
+node_modules/
+dist/*.idsig
+android/build/
+android/assets/www/
+android/keystore.jks
+
+# 站点运行时/临时
+*.log
+_tmp/
+.edge-prof-*/
+
+# 测试/调试中间产物
+_inline.js
+_shot*.html
+_roster-test.html
+_sw-test.html
+*.tmp
+.DS_Store
+Thumbs.db

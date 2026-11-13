@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>lobby-test</title>
+<style>body{background:#0b0f14;color:#e8ecf5;font:13px/1.7 Consolas,monospace;padding:14px}
+pre{white-space:pre-wrap}iframe{border:1px solid #333}</style></head>
+<body>
+<pre id="results">running…</pre>
+<iframe id="f" src="/index.html" style="width:1100px;height:560px"></iframe>
+<iframe id="m" src="/index.html" style="width:390px;height:900px"></iframe>
+<script>
+const out = []; let fails = 0;
+const log = (ok, msg, extra)=>{ if(ok===null){ out.push('… '+msg); } else { if(!ok) fails++; out.push((ok?'✔ ':'✘ ')+msg+(extra!==undefined?'  '+JSON.stringify(extra):'')); } document.getElementById('results').textContent = out.join('\n'); };
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+const waitMCG = w => new Promise(res=>{ const t=setInterval(()=>{ if(w && w.MCGame){ clearInterval(t); res(w.MCGame); } },50); setTimeout(()=>{clearInterval(t);res(null);},9000); });
+
+window.addEventListener('load', async ()=>{
+  try{
+    const f = document.getElementById('f'), m = document.getElementById('m');
+    const MCG = await waitMCG(f.contentWindow);
+    const MCGm = await waitMCG(m.contentWindow);
+    if(!MCG || !MCGm){ log(false, '页面未就绪'); }
+    const W = f.contentWindow, doc = f.contentDocument;
+
+    /* ---- 1. 建房 → 座位表渲染 ---- */
+    MCG.showScreen('screen-net');
+    await MCG.__api.Net.create('房主小明', {mode:'2v2', apPerWin:2, diff:'normal'});
+    await sleep(300);
+    const lobby = doc.getElementById('netLobby');
+    log(lobby && !lobby.classList.contains('hidden'), '联机页显示座位表');
+    const seats = doc.querySelectorAll('#netSeats .seatcard');
+    log(seats.length === 6, '座位表渲染 6 个座位', seats.length);
+    const codeText = doc.getElementById('netCode').textContent.trim();
+    log(/^[A-Z0-9]{9}$/.test(codeText), '房间码显示在页面上', codeText);
+
+    /* ---- 2. 空位加人机 / 改队伍 ---- */
+    const Net = MCG.__api.Net;
+    await Net.fillBot(2);
+    await Net.fillBot(3);
+    await sleep(350);
+    log(Net.slots[2] && Net.slots[2].kind==='bot' && Net.slots[3] && Net.slots[3].kind==='bot',
+        '2、3 号空位已变成人机', [Net.slots[2] && Net.slots[2].name, Net.slots[3] && Net.slots[3].name]);
+    const botCard = doc.querySelector('#netSeats .seatcard:nth-child(3)');
+    log(!!botCard && botCard.textContent.includes('人机'), '人机卡片上有「人机」标记与强度');
+    const teamSelects = doc.querySelectorAll('#netSeats select[data-act="team"]');
+    log(teamSelects.length === 3, '房主可以改每个已占座位（含人机）的队伍', teamSelects.length);
+    const diffSelects = doc.querySelectorAll('#netSeats select[data-act="diff"]');
+    log(diffSelects.length === 2, '每个人机都有独立的强度下拉', diffSelects.length);
+    const sel3 = doc.querySelector('#netSeats select[data-act="team"][data-slot="3"]');
+    sel3.value = '2'; sel3.dispatchEvent(new W.Event('change', {bubbles:true}));
+    await sleep(500);
+    log(Net.slots[3] && Net.slots[3].team === 2, '下拉换队伍即时生效（3 号座位 → 队伍 C）', Net.slots[3] && Net.slots[3].team);
+    const sel2 = doc.querySelector('#netSeats select[data-act="diff"][data-slot="2"]');
+    sel2.value = 'hard'; sel2.dispatchEvent(new W.Event('change', {bubbles:true}));
+    await sleep(500);
+    log(Net.slots[2] && Net.slots[2].diff === 'hard', '人机强度下拉即时生效（2 号 → 困难）', Net.slots[2] && Net.slots[2].diff);
+
+    /* ---- 3. 开局按钮 / 计数 ---- */
+    const startBtn = doc.getElementById('netStartBtn');
+    log(!!startBtn && !startBtn.disabled, '有 2 个以上队伍时「开始对局」可用', startBtn && startBtn.disabled);
+    const info = doc.getElementById('netSeatInfo').textContent;
+    log(/座位 3\/6/.test(info), '座位计数正确', info.trim());
+    const copyBrief = doc.getElementById('netCopyBrief');
+    log(!!copyBrief, '有「复制战报」按钮');
+    const brief = await Net.copyBrief();
+    log(typeof brief === 'string' && brief.includes('房间 '+Net.code), '复制战报拿到中文战报', (brief||'').split('\n')[0]);
+
+    /* ---- 4. 观战面板（把快照塞进去看渲染） ---- */
+    Net.snapshot = {round:5, over:false, mode:'2v2', players:[
+      {name:'房主小明', hp:4, ap:2, prog:'石进程', weapon:'石剑', armor:'', alive:true},
+      {name:'史蒂夫', hp:0, ap:0, prog:'空手', weapon:'一拳', armor:'', alive:false},
+    ], lastLog:['第 5 回合','房主小明 命中 史蒂夫 -1 血']};
+    Net.spectating = true;
+    W.renderSpectate();
+    await sleep(150);
+    const spec = doc.getElementById('netSpectate');
+    log(spec && !spec.classList.contains('hidden') && spec.textContent.includes('观战'), '观战面板能渲染同一局局面');
+    log(spec && spec.textContent.includes('第 5 回合'), '观战面板显示回合与日志');
+    const rows = spec ? spec.querySelectorAll('div[style*="border-bottom"]').length : 0;
+    log(rows === 2, '观战面板按玩家列出人数', rows);
+
+    /* ---- 5. 版本更新窗口 ---- */
+    W.showUpdateDialog({version:'9.9.9', date:'2025-11-14', notes:['测试：联机座位','测试：手机版']});
+    await sleep(120);
+    const upd = doc.getElementById('updBox');
+    log(!!upd, '发现新版本时弹出更新窗口');
+    log(upd && upd.textContent.includes('9.9.9') && upd.textContent.includes('测试：联机座位'), '更新窗口显示版本号与更新说明');
+    log(upd && upd.textContent.includes('v1.7.0'), '更新窗口显示当前版本');
+    const later = doc.getElementById('updLater');
+    if(later) later.click();
+    await sleep(120);
+    log(!doc.getElementById('updBox'), '点「稍后」能关掉更新窗口');
+    /* 版本比较逻辑 */
+    log(W.verNewer('1.7.1','1.7.0') === true && W.verNewer('1.7.0','1.7.0') === false && W.verNewer('1.6.9','1.7.0') === false,
+        '版本号比较逻辑正确（1.7.1>1.7.0，相等不算新，1.6.9 更旧）');
+
+    /* ---- 6. 手机布局 ---- */
+    const mw = m.contentWindow, mdoc = m.contentDocument;
+    const grid = mw.getComputedStyle(mdoc.querySelector('.players') || mdoc.body).gridTemplateColumns;
+    log(mw.innerWidth < 420, '手机宽度 iframe 生效', mw.innerWidth);
+    mdoc.getElementById('mSetting').click();
+    await sleep(400);
+    const rosterRow = mdoc.querySelector('#rosterList .rrow');
+    const rowStyle = rosterRow ? mw.getComputedStyle(rosterRow) : null;
+    log(!!rosterRow, '手机上队伍编辑的行也能渲染');
+    const nameW = rosterRow ? mw.getComputedStyle(rosterRow.querySelector('.rname')).width : '';
+    log(rowStyle && parseFloat(nameW) > 260, '手机上名称输入框铺满一行', nameW);
+    const btn = mdoc.getElementById('setBack') || mdoc.querySelector('#rosterList ~ .btn');
+    const btnH = btn ? btn.getBoundingClientRect().height : 0;
+    log(btnH >= 34, '手机按钮高度够点（≥34px）', Math.round(btnH));
+  }catch(e){
+    log(false, '异常：' + (e && e.message), (e && e.stack || '').slice(0,200));
+  }
+  out.push('');
+  out.push(fails === 0 ? 'LOBBY ALL PASS' : ('LOBBY FAILURES: ' + fails));
+  document.getElementById('results').textContent = out.join('\n');
+  document.title = fails === 0 ? 'LOBBY-ALL-PASS' : ('LOBBY-FAIL-' + fails);
+});
+</script>
+</body></html>

@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "方块猜拳战场 · MC 二创桌游",
+  "short_name": "猜拳战场",
+  "description": "Minecraft 二创猜拳桌游：猜拳夺 AP → 升进程 / 造装备 / 收补给 → 相互战斗。支持队伍编辑、人机对战、局域网联机。",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "./index.html?src=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "browser"],
+  "orientation": "any",
+  "background_color": "#0e1116",
+  "theme_color": "#0e1116",
+  "categories": ["games", "entertainment"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "apple-touch-icon-180.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "立即开一局", "short_name": "开一局", "url": "./index.html?auto=1", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "队伍编辑", "short_name": "队伍", "url": "./index.html" }
+  ]
+}

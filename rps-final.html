@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>猜拳流程终验（手动模式·基于流程日志）</title>
+<style>body{background:#0d1017;color:#dfe6f2;font-family:ui-monospace,Consolas,monospace;padding:12px}
+pre{white-space:pre-wrap;font-size:12.5px;line-height:1.5}
+iframe{width:1080px;height:340px;border:1px solid #26304a;border-radius:10px;margin-top:8px}</style>
+</head>
+<body>
+<pre id="out">运行中…</pre>
+<iframe id="fr" src="/index.html"></iframe>
+<script>
+const lines=[]; const say=(s,c)=>{ lines.push(c?`[${c}] `+s:s); document.getElementById('out').textContent=lines.join('\n'); };
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+(async ()=>{
+  let bad=0;
+  try{
+    const fr=document.getElementById('fr');
+    await new Promise(r=>{ fr.onload=r; setTimeout(r,5000); });
+    await wait(400);
+    const W=fr.contentWindow, D=fr.contentDocument, MC=W.MCGame;
+    const qa=s=>Array.from(D.querySelectorAll(s));
+    const evalIn = code => W.eval(code);
+
+    say('【1】手动模式开局（用户报告会卡死的模式）');
+    evalIn(`MCGame.start({enemyCount:1,diff:'normal',auto:false,mode:'1v1',name:'终验'});`);
+    await wait(500);
+    const G = MC.state();
+    say(`  ${G.players.map(p=>p.name).join(' vs ')}`);
+
+    say('');
+    say('【2】只用真实点击推进，直到进入行动阶段');
+    const snap = ()=> evalIn(`(function(){
+      const G=MCGame.state();
+      const a=document.getElementById('rpsArea'), b=document.getElementById('rpsBtns');
+      return {
+        areaVis: a? !a.classList.contains('hidden'):false,
+        btnsVis: b? !b.classList.contains('hidden'):false,
+        hasRes: typeof rpsResolver==='function',
+        bar: Array.from(document.querySelectorAll('#actionbar button')).map(x=>x.textContent.trim()),
+        turn: G? G.turnOwner : 'noG',
+        clickAt: MCGame.__api.getLastClickAt ? MCGame.__api.getLastClickAt() : -1,
+        log: (MCGame.__api.getRpsLog ? MCGame.__api.getRpsLog() : []).length
+      };
+    })()`);
+
+    let clicks=0, ok=false;
+    const t0=Date.now();
+    while(Date.now()-t0 < 30000){
+      const st = snap();
+      /* 已完成：日志出现 rpsPhase 返回 */
+      const done = evalIn(`(MCGame.__api.getRpsLog?MCGame.__api.getRpsLog():[]).some(l=>String(l).includes('rpsPhase 返回'))`);
+      if(done){ ok = true; break; }
+      /* 出拳 */
+      if(st.btnsVis && st.hasRes){
+        const b = qa('#rpsBtns .btn')[0];
+        if(b){ b.click(); clicks++; await wait(200); continue; }
+      }
+      /* 继续类按钮 */
+      const cont = qa('#actionbar button').find(b=>b.textContent.includes('继续'));
+      if(cont){ cont.click(); clicks++; await wait(200); continue; }
+      await wait(120);
+    }
+    say(`  点击 ${clicks} 次｜rpsPhase 已返回: ${ok}`, ok?'ok':'bad');
+    if(!ok) bad++;
+    const fin = snap();
+    say(`  结束状态: turn=${fin.turn} clickAt=${fin.clickAt} bar=${JSON.stringify(fin.bar)}`);
+
+    say('');
+    say('【3】完整流程日志');
+    const log = evalIn(`JSON.stringify(MCGame.__api.getRpsLog ? MCGame.__api.getRpsLog() : [])`);
+    try{ JSON.parse(log).forEach((l,i)=>say(`  ${i+1}. ${l}`)); }catch(e){ say('  '+log); }
+
+    say('');
+    say('【4】行动阶段：真实点击一个行动');
+    const acts = qa('#actionbar button').filter(b=>typeof b.onclick==='function');
+    say(`  可点按钮: ${acts.slice(0,8).map(b=>b.textContent.trim().slice(0,14)).join(' | ')}`, acts.length>0?'ok':'bad');
+    if(acts.length===0) bad++;
+    const up = acts.find(b=>/投入|升级/.test(b.textContent));
+    if(up){ up.click(); await wait(300); say('  已点击升级入口', 'ok'); }
+
+    say('');
+    if(ok && bad===0) say('✅ 猜拳流程正常，不再卡死', 'ok');
+    else say(`❌ 仍有问题（bad=${bad}）`, 'bad');
+  }catch(e){ say('异常: '+(e&&e.stack?e.stack:e), 'bad'); }
+  document.title='RPSFINAL-DONE';
+})();
+</script>
+</body>
+</html>

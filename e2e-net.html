@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>联机双端验证</title>
+<style>
+ body{background:#0d1017;color:#dfe6f2;font-family:ui-monospace,Consolas,monospace;margin:0;padding:12px}
+ #report{white-space:pre-wrap;line-height:1.55;font-size:13px;background:#121722;border:1px solid #26304a;
+   border-radius:10px;padding:12px;max-height:460px;overflow:auto}
+ .frames{display:flex;gap:10px;margin-top:10px}
+ .frames>div{flex:1;border:1px solid #26304a;border-radius:10px;overflow:hidden}
+ iframe{width:100%;height:620px;border:0;background:#0e1116;display:block}
+ .cap{padding:4px 8px;background:#161d2a;font-size:12px;color:#9fb0cc}
+ .ok{color:#6ee7a8}.bad{color:#ff7b7b}.warn{color:#ffd479}
+</style>
+</head>
+<body>
+<h2 style="margin:0 0 8px;font-size:16px">局域网联机 · 双端验证（两个真实浏览器上下文）</h2>
+<pre id="report">运行中…</pre>
+<div class="frames">
+  <div><div class="cap">客户端 A（房主）</div><iframe id="fa" src="/index.html"></iframe></div>
+  <div><div class="cap">客户端 B（加入者）</div><iframe id="fb" src="/index.html"></iframe></div>
+</div>
+
+<script>
+const lines = [];
+const say = (s,c)=>{ lines.push(c?`[${c}] ${s}`:s); document.getElementById('report').textContent = lines.join('\n'); };
+const wait = ms => new Promise(r=>setTimeout(r,ms));
+
+function loadFrame(id){
+  return new Promise(res=>{
+    const fr = document.getElementById(id);
+    const done = ()=>{ setTimeout(()=>res(fr), 350); };
+    if(fr.contentDocument && fr.contentDocument.readyState === 'complete' && fr.contentWindow.MCGame) return done();
+    fr.addEventListener('load', done);
+    setTimeout(done, 6000);
+  });
+}
+async function ready(MC, ms=8000){
+  const t0 = Date.now();
+  while(Date.now()-t0 < ms){
+    const G = MC.state();
+    if(G && MC.__api.Net && MC.__api.Net.active) return G;
+    await wait(80);
+  }
+  return MC.state();
+}
+
+(async ()=>{
+  try{
+    const [fa, fb] = await Promise.all([loadFrame('fa'), loadFrame('fb')]);
+    const A = { w: fa.contentWindow, d: fa.contentDocument, MC: fa.contentWindow.MCGame };
+    const B = { w: fb.contentWindow, d: fb.contentDocument, MC: fb.contentWindow.MCGame };
+    if(!A.MC || !B.MC) throw new Error('有一端没加载出 MCGame');
+
+    say('两个客户端都加载完成');
+    /* 清掉上一次的房间残留 */
+    try{ A.w.localStorage.clear(); B.w.localStorage.clear(); }catch(e){}
+
+    /* ---- A 创建房间 ---- */
+    A.MC.showScreen('screen-net');
+    B.MC.showScreen('screen-net');
+    A.MC.gameMode = '1v1'; A.MC.saveSettings && A.MC.saveSettings();
+    const cr = await A.w.netCreateRoomWith('房主A');
+    say(`A 创建房间: ${JSON.stringify(cr)}`, cr.ok ? 'ok':'bad');
+    if(!cr.ok) throw new Error('创建房间失败: ' + cr.err);
+    const code = cr.code;
+    say(`房间码 = ${code}（9 位）`, /^[A-Z0-9]{9}$/.test(code) ? 'ok':'bad');
+
+    /* ---- B 加入 ---- */
+    const jr = await B.w.netJoinRoomWith(code, '加入者B');
+    say(`B 加入房间: ok=${jr.ok}`, jr.ok?'ok':'bad');
+    await wait(600);
+    say(`A 看到的座位数: ${A.MC.__api.Net.seats.length}`, A.MC.__api.Net.seats.length===2?'ok':'bad');
+    say(`B 看到的座位数: ${B.MC.__api.Net.seats.length}`, B.MC.__api.Net.seats.length===2?'ok':'bad');
+    const namesA = A.MC.__api.Net.seats.map(s=>s.name).join(' / ');
+    say(`A 端座位: ${namesA}`, namesA.includes('房主A')&&namesA.includes('加入者B')?'ok':'bad');
+    const namesB = B.MC.__api.Net.seats.map(s=>s.name).join(' / ');
+    say(`B 端座位: ${namesB}`, namesB.includes('房主A')&&namesB.includes('加入者B')?'ok':'bad');
+
+    /* ---- 都准备 ---- */
+    await A.MC.__api.Net.ready(true);
+    await B.MC.__api.Net.ready(true);
+    await wait(700);
+    const readyA = A.MC.__api.Net.seats.filter(s=>s.ready).length;
+    const readyB = B.MC.__api.Net.seats.filter(s=>s.ready).length;
+    say(`A 端准备人数: ${readyA}`, readyA===2?'ok':'bad');
+    say(`B 端准备人数: ${readyB}`, readyB===2?'ok':'bad');
+
+    /* ---- 房主开始对局 ---- */
+    await A.MC.__api.Net.start();
+    say('房主点击开始对局…');
+    /* 两端应自动开局（同一 seed） */
+    const GA = await ready(A.MC, 10000);
+    const GB = await ready(B.MC, 10000);
+    say(`A 端开局: players=${GA? GA.players.length : 0}`, GA && GA.players.length===2?'ok':'bad');
+    say(`B 端开局: players=${GB? GB.players.length : 0}`, GB && GB.players.length===2?'ok':'bad');
+    if(!GA || !GB){ throw new Error('两端没有自动开局'); }
+    say(`A 端玩家: ${GA.players.map(p=>p.name+(p.isHuman?'(我)':'')).join(', ')}`);
+    say(`B 端玩家: ${GB.players.map(p=>p.name+(p.isHuman?'(我)':'')).join(', ')}`);
+    say(`A 端游戏界面可见: ${!A.d.getElementById('game').classList.contains('hidden')}`,
+        !A.d.getElementById('game').classList.contains('hidden')?'ok':'bad');
+    say(`B 端游戏界面可见: ${!B.d.getElementById('game').classList.contains('hidden')}`,
+        !B.d.getElementById('game').classList.contains('hidden')?'ok':'bad');
+
+    /* ---- 动作同步：A 发一个动作，B 应能在队列里收到 ---- */
+    const before = (B.MC.__api.netIn && B.MC.__api.netIn.act) ? Object.keys(B.MC.__api.netIn.act).length : 0;
+    await A.MC.__api.Net.send({kind:'act', action:{type:'pass', label:'同步测试动作'}});
+    await wait(2200);
+    const inbox = B.MC.__api.netIn && B.MC.__api.netIn.act ? B.MC.__api.netIn.act : {};
+    const gotCount = Object.values(inbox).reduce((n,arr)=>n+arr.length,0);
+    say(`B 收到 A 的动作数: ${gotCount}`, gotCount>=1?'ok':'bad');
+    if(gotCount>=1) say(`  内容: ${JSON.stringify(Object.values(inbox)[0][0])}`);
+
+    /* ---- 猜拳同步：A 发 rps，B 队列里应有 ---- */
+    await A.MC.__api.Net.send({kind:'rps', move:'rock'});
+    await wait(2200);
+    const rpsGot = Object.keys(B.MC.__api.netIn.rps || {}).length;
+    say(`B 收到 A 的猜拳数: ${rpsGot}`, rpsGot>=1?'ok':'bad');
+
+    /* ---- 房间状态一致性 ---- */
+    const stA = await A.w.fetch('/api/room/'+code+'/state?id='+cr.youId).then(r=>r.json());
+    say(`服务端房间: started=${stA.room.started} 模式=${stA.room.mode} 座位=${stA.room.seats.length}`,
+        stA.room.started && stA.room.seats.length===2 ? 'ok':'bad');
+    say(`服务端日志条数: ${stA.logCount}`, stA.logCount>=2?'ok':'bad');
+
+    say('');
+    say('联机双端验证完成', 'ok');
+  }catch(e){
+    say('异常: ' + (e && e.stack ? e.stack : e), 'bad');
+  }
+  document.title = 'NET-E2E-DONE';
+})();
+</script>
+</body>
+</html>

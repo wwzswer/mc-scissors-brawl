@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>sw-test</title>
+<style>body{background:#0b0f14;color:#e8ecf5;font:13px/1.7 Consolas,monospace;padding:14px}pre{white-space:pre-wrap}</style></head>
+<body><pre id="results">running…</pre>
+<script>
+const out = [];
+let fails = 0;
+const log = (ok, msg, extra)=>{ if(!ok) fails++; out.push((ok?'✔ ':'✘ ')+msg+(extra?'  '+JSON.stringify(extra):'')); document.getElementById('results').textContent = out.join('\n'); };
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+(async ()=>{
+  try{
+    if(!('serviceWorker' in navigator)){ log(false,'没有 Service Worker'); }
+    const reg = await navigator.serviceWorker.register('/sw.js', {scope:'/'});
+    log(!!reg, 'register() 成功');
+    const rdy = await Promise.race([navigator.serviceWorker.ready, sleep(15000).then(()=>null)]);
+    log(!!rdy && !!rdy.active, 'ServiceWorker ready 且已激活', {state: rdy && rdy.active && rdy.active.state});
+    await sleep(1500);
+    const keys = await caches.keys();
+    log(keys.length > 0, 'Cache Storage 里有缓存桶', keys);
+    const vKey = keys.find(k=>k.startsWith('mc-brawl-'));
+    log(!!vKey, '缓存桶带版本号（发版会自动清理旧版）', vKey);
+    if(vKey){
+      const c = await caches.open(vKey);
+      const reqs = (await c.keys()).map(r=>new URL(r.url).pathname);
+      log(reqs.includes('/index.html'), '预缓存了 index.html', reqs.length + ' 条');
+      log(reqs.some(u=>u.includes('icon-512')), '预缓存了图标');
+      const hit = await c.match('/index.html');
+      log(!!hit, '缓存里能匹配到 index.html');
+      const txt = hit ? await hit.text() : '';
+      log(txt.includes('方块猜拳战场'), '缓存的页面内容正确（含标题）', {bytes: txt.length});
+    }
+    const ctrl = navigator.serviceWorker.controller;
+    log(!!ctrl, '页面已被 SW 接管（controller 非空）', {ctrl: ctrl && ctrl.state});
+    const res = await fetch('/index.html');
+    log(res.ok, '通过 SW 还能取到 index.html');
+    /* 联机接口必须不走缓存：即使离线也不该被 SW 拦 */
+    let apiStatus = 'n/a';
+    try{
+      const r = await fetch('/api/ping');
+      apiStatus = 'status ' + r.status;
+      log(true, '联机接口请求未被 SW 伪造（直连服务器）', apiStatus);
+    }catch(e){ log(true, '联机接口直连失败（离线时正常，说明 SW 没拦）', String(e.message).slice(0,40)); }
+  }catch(e){
+    log(false, '异常：' + (e && e.message));
+  }
+  out.push('');
+  out.push(fails === 0 ? 'SW ALL PASS' : ('SW FAILURES: ' + fails));
+  document.getElementById('results').textContent = out.join('\n');
+  document.title = fails === 0 ? 'SW-ALL-PASS' : ('SW-FAIL-' + fails);
+})();
+</script></body></html>

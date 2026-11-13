@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>攻击 1 AP 界面验证</title>
+<style>body{background:#0d1017;color:#dfe6f2;font-family:ui-monospace,Consolas,monospace;padding:12px}
+pre{white-space:pre-wrap;font-size:13px;line-height:1.6}
+iframe{width:1100px;height:420px;border:1px solid #26304a;border-radius:10px;margin-top:8px}</style>
+</head>
+<body>
+<pre id="out">运行中…</pre>
+<iframe id="fr" src="/index.html"></iframe>
+<script>
+const lines=[]; const say=(s,c)=>{ lines.push(c?`[${c}] `+s:s); document.getElementById('out').textContent=lines.join('\n'); };
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+(async ()=>{
+  let bad=0;
+  try{
+    const fr=document.getElementById('fr');
+    await new Promise(r=>{ fr.onload=r; setTimeout(r,5000); });
+    await wait(400);
+    const W=fr.contentWindow, D=fr.contentDocument, MC=W.MCGame;
+    const qa=s=>Array.from(D.querySelectorAll(s));
+    const ev=code=>W.eval(code);
+
+    say('【1】静默开局，准备面对面的局面');
+    MC.__api.setAutoPlayer(null);
+    MC.start({enemyCount:1, diff:'normal', auto:false, mode:'1v1', silent:true, name:'AP测试'});
+    await wait(250);
+    const info = ev(`(function(){
+      const A=MCGame.__api, G=MCGame.state(), p=G.players[0], foe=G.players[1];
+      p.ap = 4; p.weapon='fist';
+      A.setDistance(p, foe, 0);
+      const opts = A.buildHumanOptions(p);
+      const atk = opts.filter(o=>o.type==='attack');
+      return {
+        atkCost: atk.map(o=>o.cost),
+        atkLabel: atk.map(o=>o.label),
+        atkCount: atk.length,
+        ap: p.ap, slots: p.slotsLeft,
+        switchCost: opts.filter(o=>o.type==='switch_weapon').map(o=>o.cost),
+        switchFree: opts.filter(o=>o.type==='switch_weapon').every(o=>o.isAction===false),
+        buildCost: A.BUILD_COST, atkConst: A.ATK_COST
+      };
+    })()`);
+    say(`  攻击选项 ${info.atkCount} 个，标价 ${JSON.stringify(info.atkCost)}`, info.atkCost.every(c=>c===1)?'ok':'bad');
+    if(!info.atkCost.every(c=>c===1)) bad++;
+    say(`  攻击标签示例: ${info.atkLabel[0]||'(无)'}`, /1 AP/.test(info.atkLabel[0]||'')?'ok':'bad');
+    if(!/1 AP/.test(info.atkLabel[0]||'')) bad++;
+    say(`  切换武器标价 ${JSON.stringify(info.switchCost)}（应全为 0）`, info.switchCost.every(c=>c===0)?'ok':'bad');
+    if(!info.switchCost.every(c=>c===0)) bad++;
+    say(`  切换武器 isAction=false: ${info.switchFree}`, info.switchFree?'ok':'bad');
+
+    say('');
+    say('【2】实际点击攻击按钮：验证扣 1 AP');
+    ev(`MCGame.__api.askHuman(MCGame.state().players[0], MCGame.__api.buildHumanOptions(MCGame.state().players[0])).catch(()=>{});`);
+    await wait(250);
+    const before = ev(`(function(){ const p=MCGame.state().players[0]; return {ap:p.ap, slots:p.slotsLeft, foeHp:MCGame.state().players[1].hp}; })()`);
+    const atkLabel = ev(`(function(){
+      const A=MCGame.__api, p=MCGame.state().players[0];
+      const a=A.buildHumanOptions(p).find(o=>o.type==='attack');
+      return a ? a.label : '';
+    })()`);
+    const atkBtn = qa('#actionbar button').find(b=>atkLabel && b.textContent.trim().startsWith(atkLabel.replace(/（.*$/,'').trim()));
+    say(`  找到攻击按钮: ${!!atkBtn}${atkBtn?' → '+atkBtn.textContent.trim().slice(0,30):''}`, atkBtn?'ok':'bad');
+    if(atkBtn){
+      atkBtn.click();
+      await wait(1200);
+      const after = ev(`(function(){ const p=MCGame.state().players[0]; return {ap:p.ap, slots:p.slotsLeft, foeHp:MCGame.state().players[1].hp}; })()`);
+      say(`  点击前 AP=${before.ap} 槽=${before.slots} ｜ 点击后 AP=${after.ap} 槽=${after.slots}`,
+          after.ap===before.ap-1?'ok':'bad');
+      if(after.ap!==before.ap-1) bad++;
+      say(`  免费行动槽保持不变: ${after.slots===before.slots}`, after.slots===before.slots?'ok':'bad');
+      if(after.slots!==before.slots) bad++;
+    }
+
+    say('');
+    say('【3】AP=0 时攻击应不可用，但走位仍可用');
+    const zero = ev(`(function(){
+      const A=MCGame.__api, G=MCGame.state(), p=G.players[0], foe=G.players[1];
+      p.ap=0; p.slotsLeft=1; A.setDistance(p, foe, 1);
+      const opts=A.buildHumanOptions(p);
+      return {
+        atkPayable: opts.filter(o=>o.type==='attack').filter(o=>A.canPay(p,o)).length,
+        movePayable: opts.filter(o=>o.type==='move').filter(o=>A.canShow(p,o)).length
+      };
+    })()`);
+    say(`  AP=0：可支付攻击 ${zero.atkPayable} 个（应为 0）｜可支付走位 ${zero.movePayable} 个（应 >0）`,
+        zero.atkPayable===0 && zero.movePayable>0 ? 'ok':'bad');
+    if(!(zero.atkPayable===0 && zero.movePayable>0)) bad++;
+
+    say('');
+    if(bad===0) say('✅ 攻击 1 AP / 切换武器免费 已生效', 'ok');
+    else say(`❌ 有 ${bad} 项不符`, 'bad');
+  }catch(e){ say('异常: '+(e&&e.stack?e.stack:e), 'bad'); }
+  document.title='ATKAP-DONE';
+})();
+</script>
+</body>
+</html>

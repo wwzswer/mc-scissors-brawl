@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>E2E（进度式 + 切换工具 + 5级进程）</title>
+<style>
+ body{background:#0d1017;color:#dfe6f2;font-family:ui-monospace,Consolas,monospace;margin:0;padding:12px}
+ #report{white-space:pre-wrap;line-height:1.55;font-size:13px;background:#121722;border:1px solid #26304a;
+   border-radius:10px;padding:12px;max-height:430px;overflow:auto}
+ iframe{width:1120px;height:820px;border:1px solid #26304a;border-radius:10px;margin-top:10px;background:#0e1116}
+</style>
+</head>
+<body>
+<h2 style="margin:0 0 8px;font-size:16px">端到端验证 · 真实浏览器 DOM</h2>
+<pre id="report">运行中…</pre>
+<iframe id="fr" src="/index.html"></iframe>
+
+<script>
+const lines = [];
+const say = (s,c)=>{ lines.push(c?`[${c}] ${s}`:s); document.getElementById('report').textContent = lines.join('\n'); };
+const wait = ms => new Promise(r=>setTimeout(r,ms));
+let W=null, D=null, MC=null;
+const q = s => D.querySelector(s);
+const qa = s => Array.from(D.querySelectorAll(s));
+const vis = id => { const e=D.getElementById(id); return e && !e.classList.contains('hidden'); };
+
+(async ()=>{
+  try{
+    const fr = document.getElementById('fr');
+    await new Promise(res=>{ fr.onload=res; setTimeout(res,5000); });
+    await wait(500);
+    W = fr.contentWindow; D = fr.contentDocument; MC = W.MCGame;
+    if(!MC) throw new Error('MCGame 未导出');
+    say('页面加载完成');
+    say(`道具 ${Object.keys(MC.ITEMS).length}｜附魔 ${Object.keys(MC.ENCH).length}｜贴图 ${Object.keys(MC.SPRITE_POS).length}`);
+    say(`进程：${MC.PROG_NAME.join(' > ')}｜距离上限 ${MC.MAX_DIST}`);
+
+    say('');
+    say('【1】初始界面');
+    say(`主菜单可见 ${vis('screen-main')}｜菜单项 ${qa('#screen-main .mbtn').length}`, vis('screen-main')&&qa('#screen-main .mbtn').length===4?'ok':'bad');
+    q('#nameInput').value='联机测试员'; q('#nameSave').click(); await wait(60);
+    say(`改名生效 ${MC.playerName}`, MC.playerName==='联机测试员'?'ok':'bad');
+
+    say('');
+    say('【2】设置');
+    q('#mSetting').click(); await wait(50);
+    q('[data-ap="1"]').click(); await wait(40);
+    say(`猜拳 AP = ${MC.apPerWin}`, MC.apPerWin===1?'ok':'bad');
+    q('[data-mode="2v2"]').click(); await wait(40);
+    say(`模式 = ${MC.gameMode}`, MC.gameMode==='2v2'?'ok':'bad');
+
+    say('');
+    say('【3】规则页');
+    q('#mRules').click(); await wait(60);
+    const tabs = qa('#ruleTabs .tab').map(t=>t.textContent.trim());
+    say(`分页 ${tabs.length} 个：${tabs.join(' / ')}`, tabs.length>=6?'ok':'bad');
+    let icons=0;
+    for(const t of qa('#ruleTabs .tab')){ t.click(); await wait(30); icons += qa('#ruleBody .spr').length; }
+    say(`规则页图标累计 ${icons}`, icons>20?'ok':'bad');
+
+    say('');
+    say('【4】开局 2V2');
+    q('#mStart').click(); await wait(50);
+    q('#startBtn').click(); await wait(200);
+    const G = MC.state();
+    say(`玩家数 ${G.players.length}（2V2 应为 4）`, G.players.length===4?'ok':'bad');
+    say(`队伍：${G.players.map(p=>p.name+(p.isEnemy?'[敌]':'[我]')).join(' ')}`);
+    const dists=[]; for(const a of G.players) for(const b of G.players) if(a!==b) dists.push(G.dist[a.id][b.id]);
+    say(`初始距离全为 1 ${dists.every(d=>d===1)}`, dists.every(d=>d===1)?'ok':'bad');
+    MC.__api.setDistance(G.players[0], G.players[1], 99);
+    say(`距离上限 ${G.dist[G.players[0].id][G.players[1].id]}`, G.dist[G.players[0].id][G.players[1].id]===MC.MAX_DIST?'ok':'bad');
+
+    say('');
+    say('【5】低级物品在高级进程仍可获取');
+    const me = G.players[0];
+    me.itemPts = {}; me.ap = 30;
+    for(const prog of [0,1,2,3,4]){
+      me.prog = prog;
+      const keys = MC.__api.buildHumanOptions(me).filter(o=>o.type==='craftShopItem').map(o=>o.key);
+      const okAll = ['flesh','bread','fist'].every(k=>keys.includes(k));
+      say(`  ${MC.PROG_NAME[prog]}：一拳/腐肉/面包 ${okAll?'可选':'缺失'}`, okAll?'ok':'bad');
+    }
+
+    say('');
+    say('【6】物品进度式制作');
+    me.prog = 3; me.itemPts = {}; me.ap = 10;
+    await MC.__api.applyAction(me, {type:'craftShopItem', key:'flesh'});
+    const p1 = MC.__api.itemProgress(me,'flesh');
+    say(`腐肉投入 1 步：进度 ${p1}/2，未到手 ${!MC.__api.hasItem(me,'flesh')}`, p1===1&&!MC.__api.hasItem(me,'flesh')?'ok':'bad');
+    await MC.__api.applyAction(me, {type:'craftShopItem', key:'flesh'});
+    say(`再投 1 步：到手 ${MC.__api.hasItem(me,'flesh')}`, MC.__api.hasItem(me,'flesh')?'ok':'bad');
+    const saved = JSON.parse(W.localStorage.getItem('mcItemProg')||'{}');
+    say(`物品进度已存档 ${typeof saved[me.name]==='object'}`, typeof saved[me.name]==='object'?'ok':'bad');
+    me.progPts = 2;
+    const pdots = qa('#players .progdots .dot').length, pon = qa('#players .progdots .dot.on').length;
+    say(`面板进程进度小点 ${pdots} 个（点亮 ${pon}）`, pdots>0?'ok':'bad');
+    /* 直接检查物品进度小点的渲染函数（不打开商店面板，避免悬空 await） */
+    const rowHtml = MC.__api.itemProgRow(me, 'trident');
+    say(`物品进度小点 HTML 含 dot：${rowHtml.includes('dot')}`, rowHtml.includes('dot')?'ok':'bad');
+    say(`商店渲染函数可用：${typeof MC.__api.openShop==='function'}`, typeof MC.__api.openShop==='function'?'ok':'bad');
+
+    say('');
+    say('【7】切换手上工具');
+    /* 重开一局干净局面，并在 iframe 自己的 realm 内验证（避免父页面变量/异步等待干扰） */
+    MC.__api.setAutoPlayer(null);
+    const before = W.eval("(function(){ const G=MCGame.state(); return {players:G?G.players.length:-1, round:G?G.round:-1, over:G?G.over:null, runId:G?G.runId:'-', gRun:globalThis.__MC_RUN}; })()");
+    say(`  重开前现场：${JSON.stringify(before)}`);
+    MC.start({enemyCount:1, diff:'normal', auto:false, mode:'1v1', silent:true, name:'工具测试'});
+    await wait(150);
+    const after = W.eval("(function(){ const G=MCGame.state(); return {players:G.players.length, names:G.players.map(p=>p.name+(p.isEnemy?'[敌]':'[我]')).join(' '), round:G.round, over:G.over, runId:G.runId, gRun:globalThis.__MC_RUN, foes:G.players.filter(p=>p.alive&&p.team!==G.players[0].team).length}; })()");
+    say(`  重开后现场：${JSON.stringify(after)}`);
+    const tool = W.eval(`(function(){
+      const A = MCGame.__api, G = MCGame.state(), p = G.players[0], foe = G.players[1];
+      p.prog = 3; p.itemPts = {}; p.ap = 20; p.weapon = 'fist';
+      A.addItem(p,'wood_sword',1); A.addItem(p,'stone_sword',1);
+      const sw = A.buildHumanOptions(p).filter(o=>o.type==='switch_weapon').map(o=>o.key);
+      A.switchWeapon(p,'stone_sword');
+      const w1 = p.weapon;
+      A.setDistance(p, foe, 0);
+      const atk = A.buildHumanOptions(p).filter(o=>o.type==='attack').map(o=>o.key);
+      A.switchWeapon(p,'wood_sword');
+      const atk2 = A.buildHumanOptions(p).filter(o=>o.type==='attack').map(o=>o.key);
+      A.switchWeapon(p,'fist');
+      const atk3 = A.buildHumanOptions(p).filter(o=>o.type==='attack').map(o=>o.key);
+      A.setDistance(p, foe, 4);
+      const atk4 = A.buildHumanOptions(p).filter(o=>o.type==='attack').length;
+      const mv = A.buildHumanOptions(p).filter(o=>o.type==='move'&&o.dir===-1).length;
+      return { sw: sw.join(','), w1, atk: atk.join(','), atk2: atk2.join(','), atk3: atk3.join(','), far: atk4, mv, dist: A.distanceBetween(p,foe) };
+    })()`);
+    say(`  可换上：${tool.sw}`, tool.sw.includes('stone_sword')&&tool.sw.includes('wood_sword')?'ok':'bad');
+    say(`  切换到石剑：${tool.w1}`, tool.w1==='stone_sword'?'ok':'bad');
+    say(`  距离 0 攻击选项：石剑=${tool.atk} 木剑=${tool.atk2} 空手=${tool.atk3}`,
+        tool.atk==='stone_sword'&&tool.atk2==='wood_sword'&&tool.atk3==='fist'?'ok':'bad');
+    say(`  距离 4 格：攻击 ${tool.far} 个、靠近 ${tool.mv} 个`, tool.far===0&&tool.mv===1?'ok':'bad');
+    say('  （切换工具不花 AP、不占行动次数：由 rules-test.js 断言）');
+
+    say('');
+    say('【8】AI 托管跑完整局');
+    MC.__api.setFastTiming(); MC.__api.setInstantRps && MC.__api.setInstantRps();
+    MC.__api.setAutoPlayer((p,opts)=>{
+      const o=opts||[];
+      return o.find(x=>x.type==='attack') || o.find(x=>x.type==='craftShopItem')
+          || o.find(x=>x.type==='shop_progress') || o.find(x=>x.type==='move') || {type:'pass'};
+    });
+    /* 重新正常开一局（不传 silent，主循环才会跑起来） */
+    MC.start({enemyCount:1, diff:'normal', auto:true, mode:'1v1', name:'测试员'});
+    const G8 = MC.state();
+    const t0 = Date.now();
+    for(let i=0;i<40000 && !G8.over && G8.round<5;i++) await wait(1);
+    say(`对局推进到第 ${G8.round} 回合（已结束=${G8.over}）`, (G8.round>=3||G8.over)?'ok':'bad');
+    say(`面板 ${qa('#players .pcard').length}｜血量块 ${qa('#players .hpblk').length}｜贴图 ${qa('#players .spr').length}`);
+    say(`进度点 ${qa('#players .progdots').length} 组｜日志 ${qa('#log div').length} 行`);
+    const ovShown = !q('#overlay').classList.contains('hidden');
+    say(`结算弹窗 ${ovShown}（对局结束=${G8.over}）`, (G8.over ? ovShown : !ovShown) ?'ok':'bad');
+
+    say('');
+    say('验证完成', 'ok');
+  }catch(e){
+    say('异常: '+(e&&e.stack?e.stack:e), 'bad');
+  }
+  document.title = 'E2E-DONE';
+})();
+</script>
+</body>
+</html>

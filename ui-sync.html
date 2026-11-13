@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>界面实时更新验证</title>
+<style>body{background:#0d1017;color:#dfe6f2;font-family:ui-monospace,Consolas,monospace;padding:12px}
+pre{white-space:pre-wrap;font-size:13px;line-height:1.6}
+iframe{width:1100px;height:380px;border:1px solid #26304a;border-radius:10px;margin-top:8px}</style>
+</head>
+<body>
+<pre id="out">运行中…</pre>
+<iframe id="fr" src="/index.html"></iframe>
+<script>
+const lines=[]; const say=(s,c)=>{ lines.push(c?`[${c}] `+s:s); document.getElementById('out').textContent=lines.join('\n'); };
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+(async ()=>{
+  let bad=0;
+  try{
+    const fr=document.getElementById('fr');
+    await new Promise(r=>{ fr.onload=r; setTimeout(r,5000); });
+    await wait(400);
+    const W=fr.contentWindow, D=fr.contentDocument, MC=W.MCGame;
+    const qa=s=>Array.from(D.querySelectorAll(s));
+    const readAp = ()=>{ const t=D.getElementById('actionbar').textContent; const m=t.match(/行动点\s*(\d+)/); return m?+m[1]:-1; };
+    const readProg = ()=>{ const b=D.querySelector('#actionbar .btn.prog'); return b?b.textContent.trim():'(无)'; };
+
+    say('【1】静默开局，进入玩家回合');
+    MC.__api.setAutoPlayer(null);
+    MC.start({enemyCount:1, diff:'normal', auto:false, mode:'1v1', silent:true, name:'界面测试'});
+    await wait(250);
+    const p = MC.state().players[0];
+    p.prog = 1; p.progPts = 1; p.ap = 5; p.itemPts = {};
+    MC.__api.askHuman(p, MC.__api.buildHumanOptions(p)).catch(()=>{});
+    await wait(250);
+    say(`  初始：行动点=${readAp()} ｜ ${readProg().slice(0,40)}`, readAp()===5?'ok':'bad');
+    if(readAp()!==5) bad++;
+
+    say('');
+    say('【2】真实点击「进程」按钮 3 次，每次检查面板是否立刻更新');
+    for(let i=1;i<=3;i++){
+      const btn = D.querySelector('#actionbar .btn.prog');
+      if(!btn){ say(`  第 ${i} 次：找不到进程按钮`, 'bad'); bad++; break; }
+      const before = readAp();
+      btn.click();
+      await wait(180);
+      const after = readAp();
+      const progTxt = readProg();
+      const okStep = (after === before - 1);
+      say(`  第 ${i} 次点击：AP ${before} → ${after} ｜ ${progTxt.slice(0,34)}`, okStep?'ok':'bad');
+      if(!okStep) bad++;
+    }
+
+    say('');
+    say('【3】顶点信息条与玩家面板是否同步');
+    const top = D.getElementById('topbar') ? D.getElementById('topbar').textContent : '';
+    const pcard = qa('#players .pcard')[0];
+    const cardTxt = pcard ? pcard.textContent.replace(/\s+/g,' ') : '';
+    const progInCard = cardTxt.match(/(空手|木进程|石进程|铁进程|钻石进程)/);
+    say(`  玩家面板进程：${progInCard?progInCard[1]:'(未找到)'}`, progInCard?'ok':'bad');
+    if(!progInCard) bad++;
+    const apMatch = cardTxt.match(/行动点\s*(\d+)/);
+    say(`  玩家面板行动点：${apMatch?apMatch[1]:'(未找到)'}`, (apMatch && +apMatch[1]===readAp())?'ok':'bad');
+
+    say('');
+    if(bad===0) say('✅ 每次交互后界面都实时更新', 'ok');
+    else say(`❌ 有 ${bad} 项未同步`, 'bad');
+  }catch(e){ say('异常: '+(e&&e.stack?e.stack:e), 'bad'); }
+  document.title='UISYNC-DONE';
+})();
+</script>
+</body>
+</html>
