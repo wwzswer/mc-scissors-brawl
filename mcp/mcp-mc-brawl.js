@@ -571,7 +571,8 @@ function fmtRoomAsk(ask) {
   const head = ask.ask === 'rps' ? '✊ 房主那边的引擎问：这一轮你出什么？'
     : ask.ask === 'dodge' ? '🛡 判定平局，房主问：你要不要花 1 AP 闪避？'
     : '🎯 轮到你行动了，可选：';
-  if (ask.ask === 'rps') return head + '\n（可用 mc_room_answer move=rock/scissors/paper 回答）';
+  if (ask.ask === 'rps') return head + '（用 mc_room_answer move=rock/scissors/paper 回答）' +
+    '  💡 顺手把这一回合的行动也排好：plan="1,3,pass" —— 一回合只问一次，快很多。';
   const lines = list.map((x, i) => `${i + 1}. ${x.label}`);
   return head + '\n' + lines.join('\n') +
     '\n\n（用 mc_room_answer choice=序号 回答，choice="pass" 表示结束行动）';
@@ -661,18 +662,23 @@ server.tool(
 
 server.tool(
   'mc_room_answer',
-  '回答 mc_room_wait 给出的问题：出拳传 move；行动传 choice（序号或选项 id）；结束行动传 choice="pass"。',
+  '回答 mc_room_wait 的问题。move=出拳；choice=行动序号/id/pass；plan=顺便把整回合行动排好（逗号分隔，最快）。',
   {
-    move: z.enum(['rock', 'scissors', 'paper']).optional().describe('猜拳：rock/scissors/paper'),
-    choice: z.union([z.string(), z.number()]).optional().describe('行动序号（1、2…）或选项 id，或 "pass"'),
+    move: z.enum(['rock', 'scissors', 'paper']).optional().describe('出拳：rock/scissors/paper'),
+    choice: z.string().optional().describe('行动序号（1、2…）或选项 id，或 "pass"'),
+    plan: z.string().optional().describe('整回合计划，逗号分隔，如 "1,3,pass"；和 move 一起传只要一问一答'),
   },
-  async ({ move, choice }) => {
+  async ({ move, choice, plan }) => {
     const r = state.room;
     if (!r.code || !r.seatId) return { content: [{ type: 'text', text: '还没进房间，先 mc_room_join。' }], isError: true };
     const ask = r.ask;
     if (!ask) return { content: [{ type: 'text', text: '现在没有要回答的问题（先 mc_room_wait）。' }], isError: true };
 
+    const planList = (typeof plan === 'string' && plan.trim())
+      ? plan.split(/[,\uFF0C;\uFF1B\n、]/).map(x => x.trim()).filter(Boolean)
+      : [];
     const action = { kind: 'ans', promptId: ask.promptId };
+    if (planList.length) action.plan = planList;
     if (ask.ask === 'rps') {
       const mv = move || (typeof choice === 'string' && ['rock', 'scissors', 'paper'].includes(choice) ? choice : null);
       if (!mv) return { content: [{ type: 'text', text: '猜拳要传 move=rock/scissors/paper。' }], isError: true };
@@ -700,26 +706,9 @@ server.tool(
       if (!d || !d.ok) return { content: [{ type: 'text', text: `提交失败：${(d && d.err) || '未知'}` }], isError: true };
       r.ask = null;
       const what = action.move ? `出拳 ${action.move}` : action.pass ? '结束行动' : `选了 ${action.id}`;
-      return { content: [{ type: 'text', text: `已提交（${what}）。接着 mc_room_wait 等下一条，或者 mc_room_board 看局面。` }] };
+      return { content: [{ type: 'text', text: `已提交（${what}）。接着 mc_room_wait 等下一条，或者用 mc_room 按房间码看局面。` }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `提交时出错：${e && e.message ? e.message : e}` }], isError: true };
-    }
-  },
-);
-
-server.tool(
-  'mc_room_board',
-  '看当前网页房间的局面（每人的血量/AP/进程/装备）与最近一条日志。',
-  {},
-  async () => {
-    const r = state.room;
-    if (!r.code) return { content: [{ type: 'text', text: '还没进房间，先 mc_room_join（或者用 mc_room 按房间码只读看）。' }], isError: true };
-    try {
-      const d = await roomApi(`/api/room/${r.code}/state`);
-      if (!d || !d.ok) return { content: [{ type: 'text', text: `读不到房间：${(d && d.err) || '未知'}` }], isError: true };
-      return { content: [{ type: 'text', text: `房间 ${r.code}\n` + boardText(d.state) }] };
-    } catch (e) {
-      return { content: [{ type: 'text', text: `连不上：${e && e.message ? e.message : e}` }], isError: true };
     }
   },
 );
@@ -763,7 +752,16 @@ server.tool(
         isError: true,
       };
     }
-    return { content: [{ type: 'text', text: renderRoomSnapshot(code, d, detail) }] };
+    /* 房主在联机对局里每 250ms 会把整份局面推到 /state，比 snapshot 更全 */
+    let live = null;
+    try {
+      const sr = await fetch(`${base}/api/room/${code}/state`, { cache: 'no-store' });
+      const sd = await sr.json();
+      if (sd && sd.ok && sd.state) live = sd.state;
+    } catch {}
+    const text = renderRoomSnapshot(code, d, detail);
+    const withBoard = live ? text + String.fromCharCode(10) + String.fromCharCode(10) + '当前局面：' + String.fromCharCode(10) + boardText(live) : text;
+    return { content: [{ type: 'text', text: withBoard }] };
   },
 );
 

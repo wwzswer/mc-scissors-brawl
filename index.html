@@ -344,7 +344,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#0d1219;padding:1px 
 <body>
 <button id="backBtn" class="backbtn hidden" aria-label="返回">‹</button>
 <div id="app">
-  <h1>方块猜拳战场 <span class="mono">MC 二创桌游 · 基础版 v1.7.5 · <b id="buildTag" style="color:var(--acc2)">悬浮球 · 存档 · 机器人适配</b></span></h1>
+  <h1>方块猜拳战场 <span class="mono">MC 二创桌游 · 基础版 v1.7.6 · <b id="buildTag" style="color:var(--acc2)">联机提速 · 整回合计划</b></span></h1>
   <div class="sub">猜拳夺 AP → 升进程 / 造装备 / 收补给 → 相互战斗。每位玩家 <b>4 点生命</b>，猜拳获胜的 AP 可在设置里选 <b>1 或 2</b>（判定不产生 AP）。</div>
 
   <!-- ===== SETUPUI:BEGIN ===== -->
@@ -1694,6 +1694,13 @@ function canShow(p, opt){
 let runSeq = 0;                     /* 每开一局递增，用于让旧循环自动退出 */
 async function startGame(){
   loadSettings();
+  /* 联机对局把节奏调快：等待对方时已经耗掉不少时间，别再把动画拖长 */
+  if(typeof Net !== 'undefined' && Net && Net.active){
+    try{
+      ANIM.judgmentMs = 320;
+      for(const k of Object.keys(ANIM.wait)) ANIM.wait[k] = Math.max(60, Math.round(ANIM.wait[k] * 0.4));
+    }catch(e){}
+  }
   if(G){ G.over = true; }           /* 结束上一局，旧的主循环会自行退出 */
   runSeq += 1;
   const myRun = runSeq;
@@ -2013,6 +2020,10 @@ function rlog(s){ try{ (globalThis.__rpsLog = globalThis.__rpsLog || []).push(s)
 let lastClickAt = 0;                  /* 最近一次“继续”类按钮被点的时间戳（诊断用） */
 function waitClick(label, opts){
   const o = opts || {};
+  /* 联机时不再等人点：1 秒后自动继续（否则另一端会白等一个"继续"） */
+  if(typeof netIsOn === 'function' && netIsOn()){
+    return sleep(900);
+  }
   return new Promise(res=>{
     const bar = o.bar || document.getElementById('actionbar');
     bar.innerHTML = '';
@@ -4597,7 +4608,8 @@ const NetPlay = {
   ask: null,           /* 访客当前待回答的提问 */
   waiting: null,       /* 房主当前在等谁回答 */
 };
-const NET_ASK_TIMEOUT = 180000;
+const NET_ASK_TIMEOUT = 20000;      /* 等远端 20 秒，超时就用默认动作继续（房主权威，不会失步） */
+const netPlans = {};                 /* 远端一次交来的"整回合计划"：seatId -> [选项id/序号/标签] */
 const netIsHostEngine = () => NetPlay.role === 'host';
 const netIsGuestView = () => NetPlay.role === 'guest';
 
@@ -4626,7 +4638,38 @@ async function netAskRps(p){
     {id:'paper',    label:'✋ 布',   move:'paper'},
   ]);
   setNetWaitHint('');
-  return (ans && ans.move) || null;
+  if(!ans){ log(`⏱ ${lname(p)} 没在 20 秒内出拳，先按石头算（他还能在行动阶段补操作）。`, 'l-warn'); return 'rock'; }
+  /* 她可以顺便把这一回合的行动计划一起交上来，省掉后面的来回 */
+  if(Array.isArray(ans.plan) && ans.plan.length) netPlans[p.seatId] = ans.plan.slice();
+  return ans.move || 'rock';
+}
+/* 按"整回合计划"一口气执行；遇到做不了的条目就跳过 */
+async function netApplyPlan(p, plan){
+  let done = 0;
+  for(const raw of plan){
+    if(!p.alive || G.over || p.turnSpent >= 8 || done >= 12) break;
+    const key = String(raw == null ? '' : raw).trim();
+    if(!key) continue;
+    if(/^(pass|跳过|结束|结束行动)$/i.test(key)){ log(`⏭ ${lname(p)} 按计划结束行动。`, 'l-sys'); return true; }
+    const list = netOptionList(p);
+    const byId = list.find(x => x.id === key);
+    const idx = Number(key);
+    const byIdx = (Number.isFinite(idx) && idx >= 1 && idx <= list.length) ? list[idx-1] : null;
+    const byLabel = list.find(x => String(x.label).includes(key));
+    const item = byId || byIdx || byLabel;
+    if(!item){ log(`（计划里的「${key}」现在做不了，跳过）`, 'l-warn'); continue; }
+    try{
+      if(item.shop){
+        if(item.shop.type === 'armorPriority') setArmorPriority(p, item.shop.key);
+        else applyShopAction(p, item.shop);
+      }else{
+        await runAction(p, item.opt);
+      }
+      done++;
+    }catch(e){ log('（计划执行出错：' + (e && e.message) + '）', 'l-warn'); }
+    renderAll();
+  }
+  return true;
 }
 /* 把人类可用的行动 + 商店/护甲命令摊平成一张表（网络里只传 id） */
 function netShopOptions(p){
@@ -4670,6 +4713,13 @@ function netOptionList(p){
   return out.map((x, i)=>Object.assign({id:'o'+i}, x));
 }
 async function netRemoteTurn(p){
+  /* 已经拿到"整回合计划"：一次执行完，不用再问（这是省时间的关键） */
+  const plan = netPlans[p.seatId];
+  if(plan && plan.length){
+    delete netPlans[p.seatId];
+    const okPlan = await netApplyPlan(p, plan);
+    if(okPlan){ log(`⚡ ${lname(p)} 用了预先排好的行动序列。`, 'l-sys'); return true; }
+  }
   let guard = 0;
   const avoid = new Set();       /* 试过但做不成的选项，别让它无限重问 */
   while(p.alive && !G.over && guard++ < 12){
@@ -4683,8 +4733,12 @@ async function netRemoteTurn(p){
     }
     const ans = await netAskSeat(p, 'act', list);
     setNetWaitHint('');
-    if(!ans){ log(`⌛ ${lname(p)} 太久没回应，跳过他的行动。`, 'l-warn'); return false; }
+    if(!ans){ log(`⏱ ${lname(p)} 20 秒没回应，这一回合的行动跳过。`, 'l-warn'); return true; }
     if(ans.pass) return true;
+    if(Array.isArray(ans.plan) && ans.plan.length){
+      netPlans[p.seatId] = ans.plan.slice();
+      return true;                       /* 下一圈会走 netApplyPlan */
+    }
     const item = list.find(x=>x.id === ans.id) || all.find(x=>x.id === ans.id);
     if(!item) continue;
     let ok = true;
@@ -5248,7 +5302,7 @@ function setAutoPlayerPublic(fn){ autoPlayer = fn; }
    - 服务器根目录的 version.json 是唯一真相：改版本号就能通知所有客户端
    - 发现更新 → 右下角弹窗（含更新说明）；点「立即更新」清缓存 + 更新 SW + 重载
    ========================================================================= */
-const APP_VERSION = '1.7.5';
+const APP_VERSION = '1.7.6';
 let __verChecking = false;
 function parseVer(v){ return String(v||'0').split(/[.\-+_]/).slice(0,3).map(n=>parseInt(n,10)||0); }
 function verNewer(a, b){

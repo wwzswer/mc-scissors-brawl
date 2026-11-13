@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>room-speed</title>
+<style>body{background:#0b0f14;color:#e8ecf5;font:13px/1.7 Consolas,monospace;padding:12px}pre{white-space:pre-wrap}</style></head>
+<body><pre id="results">running…</pre>
+<iframe id="f" src="/index.html" style="width:390px;height:600px;border:1px solid #333"></iframe>
+<script>
+const out=[]; let fails=0; const NL=String.fromCharCode(10);
+const log=(ok,msg,extra)=>{ if(ok===null) out.push('… '+msg); else { if(!ok) fails++; out.push((ok?'OK  ':'XX  ')+msg+(extra!==undefined?'  '+JSON.stringify(extra).slice(0,240):'')); } document.getElementById('results').textContent=out.join(NL); };
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const waitMCG=()=>new Promise(res=>{ const f=document.getElementById('f'); const t=setInterval(()=>{ const w=f.contentWindow; if(w&&w.MCGame){clearInterval(t);res(w.MCGame);} },50); setTimeout(()=>{clearInterval(t);res(null);},9000); });
+
+window.addEventListener('load', ()=>{ run().catch(e=>{ log(false,'异常 '+e.message); done(); }); });
+function done(){ out.push(''); out.push(fails===0?'SPEED ALL PASS':('SPEED FAILURES: '+fails)); document.getElementById('results').textContent=out.join(NL); document.title = fails===0?'SPEED-PASS':('SPEED-FAIL-'+fails); }
+
+async function run(){
+  const M = await waitMCG();
+  const Net = M.__api.Net;
+  const api = (p,b)=>fetch(p, b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{cache:'no-store'}).then(r=>r.json());
+  Net.pollMs = 150;
+
+  M.__api.setFastTiming(); M.__api.setInstantRps();
+  M.__api.setAutoPlayer((p,o)=>{ o=o||[]; return o.find(x=>x.type==='attack')||{type:'pass'}; });
+
+  /* --- 场景 A：她一次交「出拳 + 整回合计划」 --- */
+  await Net.create('主人', {mode:'1v1'});
+  const code = Net.code, hostId = Net.youId;
+  const j = await api('/api/room/'+code+'/join', {name:'她'});
+  const herId = j.youId;
+  log(true, '房间就绪（主人 + 她）', code);
+
+  let asks = 0, actAsks = 0, since = 0, plans = 0;
+  const herLoop = setInterval(async ()=>{
+    try{
+      const d = await api('/api/room/'+code+'/events?id='+herId+'&since='+since);
+      for(const ev of (d.events||[])){
+        since = Math.max(since, ev.seq||0);
+        const a = ev.action||{};
+        if(a.kind !== 'ask') continue;
+        asks++;
+        const ans = {kind:'ans', promptId:a.promptId};
+        if(a.ask === 'rps'){ ans.move = 'rock'; ans.plan = ['1','pass']; plans++; }   /* 一次把整回合排好 */
+        else if(a.ask === 'act'){ actAsks++; ans.pass = true; }
+        else { ans.id = (a.list&&a.list[0]&&a.list[0].id) || 'no'; }
+        await api('/api/room/'+code+'/action', {id:herId, action:ans});
+      }
+    }catch(e){}
+  }, 200);
+
+  await Net.start();
+  const t0 = Date.now();
+  let rounds = 0;
+  for(let i=0;i<300;i++){
+    await sleep(100);
+    const G = M.state();
+    if(G) rounds = Math.max(rounds, G.round);
+    if(rounds >= 4 || Date.now()-t0 > 40000) break;
+  }
+  clearInterval(herLoop);
+  log(rounds >= 3, '用 plan 时几秒就推进了多个回合', {rounds, seconds: Math.round((Date.now()-t0)/1000)});
+  log(plans >= 2, '她每回合只被问 1 次（出拳那次顺便交计划）', {asks, actAsks, plans});
+  log(actAsks <= 1, '没有再为每个行动单独来回问', {actAsks});
+  M.__api.Net.stop && M.__api.Net.stop();
+
+  /* --- 场景 B：她完全不理，房主 20 秒超时后自己往下走 --- */
+  await sleep(300);
+  const Net2 = M.__api.Net;
+  await Net2.create('主人2', {mode:'1v1'});
+  const code2 = Net2.code;
+  const j2 = await api('/api/room/'+code2+'/join', {name:'装死的她'});
+  await Net2.start();
+  const t1 = Date.now();
+  let rounds2 = 0;
+  for(let i=0;i<400;i++){
+    await sleep(100);
+    const G = M.state();
+    if(G) rounds2 = Math.max(rounds2, G.round);
+    if(rounds2 >= 2 || Date.now()-t1 > 60000) break;
+  }
+  log(rounds2 >= 2, '她不回应也能继续（20s 超时按默认走）', {rounds2, seconds: Math.round((Date.now()-t1)/1000)});
+  done();
+}
+</script></body></html>
