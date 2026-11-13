@@ -110,8 +110,12 @@ APK 的版本号在 `android/AndroidManifest.xml`，重新打包时 `build.sh` �
 
 ## 装不上 APK 怎么办（vivo / iQOO / OPPO 等）
 
-系统提示 **「安装失败：安装应用与当前系统有兼容性问题」** 时，包本身通常是好的（图标/版本能读出来就说明解析正常），
-多半是厂商的**安装校验 / 纯净模式**或**浏览器当安装器**被拦：
+系统提示 **「安装失败：安装应用与当前系统有兼容性问题」** 时，先看 adb 的真实错误（`adb install -r -d xxx.apk`）。
+本项目踩过的真因：**`resources.arsc` 被压成了 DEFLATE**，Android 11+（targetSdk≥30）要求它 **STORED + 4 字节对齐**，
+否则报 `Failure [-124: ... requires the resources.arsc ... stored uncompressed and aligned`。
+`tools/apk_repack.py` 已改成对 `resources.arsc` 用 `ZIP_STORED`，`build.sh` 再跑 `zipalign -p 4` 对齐即可。
+
+如果确实是厂商拦截（比如 vivo/iQOO 的安装校验）：
 
 1. **别用浏览器点安装**：去「文件管理 → 下载」找到 `猜拳战场-x.y.z.apk` 再点安装
 2. 关掉安装校验：

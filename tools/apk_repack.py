@@ -31,10 +31,17 @@ def repack(apk_path, dex_path):
 
         entries.sort(key=lambda p: (rank(p[1]), p[1]))
 
+        # Android 11+（targetSdk >= 30）硬性要求：
+        #   resources.arsc 必须 STORED（不压缩）且 4 字节对齐，否则安装报
+        #   INSTALL_PARSE_FAILED_RESOURCES_ARSC_COMPRESSED / "Failure [-124]"
+        # 所以这里对 resources.arsc 用 ZIP_STORED，其余照常 DEFLATE。
         out = apk_path + '.new'
-        with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+        with zipfile.ZipFile(out, 'w') as z:
             for full, rel in entries:
-                z.write(full, rel)
+                if rel == 'resources.arsc':
+                    z.write(full, rel, compress_type=zipfile.ZIP_STORED)
+                else:
+                    z.write(full, rel, compress_type=zipfile.ZIP_DEFLATED)
         os.replace(out, apk_path)
         return len(entries)
     finally:
