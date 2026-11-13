@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>shot-guest</title>
+<style>
+html,body{margin:0;background:#0e1116}
+#host{width:2px;height:2px;border:0;opacity:0.01;position:absolute;left:-10px;top:-10px}
+#guest{border:0;display:block;width:1120px;height:980px}
+</style></head>
+<body>
+<iframe id="host" src="/index.html"></iframe>
+<iframe id="guest" src="/index.html"></iframe>
+<script>
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+const waitMCG = w => new Promise(res=>{ const t=setInterval(()=>{ if(w&&w.MCGame){clearInterval(t);res(w.MCGame);} },50); setTimeout(()=>{clearInterval(t);res(null);},9000); });
+
+(async ()=>{
+  const fH = document.getElementById('host'), fG = document.getElementById('guest');
+  const H = await waitMCG(fH.contentWindow), G = await waitMCG(fG.contentWindow);
+  const NetH = H.__api.Net, NetG = G.__api.Net;
+  NetH.pollMs = 120; NetG.pollMs = 120;
+  H.__api.setFastTiming(); H.__api.setInstantRps();
+  H.__api.setAutoPlayer((p,opts)=>{
+    const o = opts||[];
+    return o.find(x=>x.type==='attack') || o.find(x=>x.type==='shop_progress') || {type:'pass'};
+  });
+  /* 房主开房，两人各占一队，再加一个人机 */
+  await NetH.create('房主·你', {mode:'2v2', apPerWin:2});
+  await NetG.join(NetH.code, '朋友·手机');
+  await sleep(500);
+  await NetH.fillBot(2);
+  await NetH.updateBot(2, {team:1, diff:'hard'});
+  await sleep(400);
+  await NetH.start();
+  /* 等到访客被提问（把提问面板拍进去） */
+  for(let i=0;i<120;i++){
+    await sleep(200);
+    const box = fG.contentDocument.getElementById('netAsk');
+    if(box && box.style.display !== 'none') break;
+  }
+  await sleep(600);
+  document.title = 'SHOT-READY';
+})();
+</script>
+</body></html>

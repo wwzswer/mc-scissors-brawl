@@ -231,6 +231,22 @@ async function handleRequest(req, res){
         console.log(`[房间] ${r.code} 加入 ${r.slots[idx].name}（座位 ${idx}，队伍${teamLetter(r.slots[idx].team)}）`);
         return json(res, {ok:true, code:r.code, youId:id, room:roomView(r, id)});
       }
+      /* 联机对局：房主把整份局面推上来，其他端拉下来渲染（不需要 3 个单独的身份校验） */
+      if(sub === 'state'){
+        if(req.method === 'POST'){
+          const body2 = (typeof body !== 'undefined' && body) ? body : {};
+          const who = body2.id;
+          if(who && !r.slots.some(s2=>s2 && s2.kind==='human' && s2.id===who)){
+            return json(res, {ok:false, err:'你不在该房间中'}, 403);
+          }
+          r.state = body2.state || null;
+          r.stateSeq = Number(body2.seq) || (r.stateSeq || 0) + 1;
+          r.touched = now();
+          return json(res, {ok:true, seq:r.stateSeq});
+        }
+        r.touched = now();
+        return json(res, {ok:true, seq:r.stateSeq || 0, state:r.state || null});
+      }
       if(sub === 'stream' && req.method === 'GET'){   /* 兼容旧客户端 */
         const id2 = new URL(url, 'http://x').searchParams.get('id') || '';
         r.touched = now();
@@ -255,17 +271,6 @@ async function handleRequest(req, res){
       }
       if(mySlotIdx < 0 && !['events'].includes(sub)) return json(res, {ok:false, err:'你不在该房间中'}, 403);
 
-      /* 联机对局：房主把整份局面推上来，其他端拉下来渲染 */
-      if(sub === 'state' && req.method === 'POST'){
-        r.state = body.state || null;
-        r.stateSeq = Number(body.seq) || (r.stateSeq || 0) + 1;
-        r.touched = now();
-        return json(res, {ok:true, seq:r.stateSeq});
-      }
-      if(sub === 'state' && req.method === 'GET'){
-        r.touched = now();
-        return json(res, {ok:true, seq:r.stateSeq || 0, state:r.state || null});
-      }
       if(sub === 'snapshot' && req.method === 'POST'){
         r.snapshot = body.snap || null;
         r.snapshotAt = now();

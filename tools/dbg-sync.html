@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>dbg-sync</title>
+<style>body{background:#0b0f14;color:#e8ecf5;font:12px/1.6 Consolas,monospace;padding:10px}pre{white-space:pre-wrap}</style></head>
+<body><pre id="results">…</pre>
+<iframe id="A" src="/index.html" style="width:400px;height:300px"></iframe>
+<iframe id="B" src="/index.html" style="width:400px;height:300px"></iframe>
+<script>
+const out = [];
+function p(x){
+  out.push(typeof x === 'string' ? x : JSON.stringify(x));
+  const el = document.getElementById('results');
+  if(el) el.textContent = out.join(String.fromCharCode(10));
+}
+const sleep = ms => new Promise(r=>setTimeout(r, ms));
+const errs = [];
+window.addEventListener('error', e => errs.push('ERR ' + e.message + ' @' + e.lineno));
+window.addEventListener('unhandledrejection', e => errs.push('REJ ' + ((e.reason && e.reason.stack) || e.reason)));
+const waitMCG = w => new Promise(res => {
+  const t = setInterval(()=>{ if(w && w.MCGame){ clearInterval(t); res(w.MCGame); } }, 50);
+  setTimeout(()=>{ clearInterval(t); res(null); }, 8000);
+});
+
+window.addEventListener('load', () => { run().catch(e=>{ p('EXCEPTION ' + (e && e.message)); p((e && e.stack || '').slice(0, 400)); dump(); }); });
+
+async function run(){
+  const fA = document.getElementById('A'), fB = document.getElementById('B');
+  const A = await waitMCG(fA.contentWindow), B = await waitMCG(fB.contentWindow);
+  p('MCG ready: A=' + !!A + ' B=' + !!B);
+  if(!A || !B){ dump(); return; }
+
+  const NetA = A.__api.Net, NetB = B.__api.Net;
+  NetA.pollMs = 120; NetB.pollMs = 120;
+  A.__api.setFastTiming(); A.__api.setInstantRps();
+  A.__api.setAutoPlayer((pl, opts)=>{
+    const o = opts || [];
+    return o.find(x=>x.type==='attack') || o.find(x=>x.type==='pass');
+  });
+
+  await NetA.create('房主', {mode:'1v1'});
+  p('created ' + NetA.code);
+  await NetB.join(NetA.code, '朋友');
+  p('joined');
+  await sleep(600);
+  p('slotsA ' + JSON.stringify(NetA.slots.filter(Boolean).map(s=>[s.name, s.kind, s.isYou])));
+  p('slotsB ' + JSON.stringify(NetB.slots.filter(Boolean).map(s=>[s.name, s.kind, s.isYou])));
+
+  const st = await NetA.start();
+  p('start ok=' + (st && st.ok));
+  await sleep(2500);
+
+  const GA = A.state();
+  p('hostG ' + (GA ? JSON.stringify(GA.players.map(x=>[x.name, x.isHuman, x.isLocal, !!(x.seatId)])) : 'null'));
+  p('hostRole ' + A.__api.NetPlay.role + ' waiting=' + JSON.stringify(A.__api.NetPlay.waiting && A.__api.NetPlay.waiting.seatId));
+  p('guestRole ' + B.__api.NetPlay.role + ' seq=' + B.__api.NetPlay.lastStateSeq + ' ask=' + JSON.stringify(B.__api.NetPlay.ask));
+
+  const srv = await fetch('/api/room/' + NetA.code + '/state').then(r=>r.json()).catch(e=>({err:String(e)}));
+  p('serverState ok=' + srv.ok + ' seq=' + srv.seq + ' players=' + (srv.state && srv.state.players ? srv.state.players.length : 'none'));
+
+  const ev = await fetch('/api/room/' + NetA.code + '/events?id=' + NetB.youId + '&since=0').then(r=>r.json()).catch(e=>({err:String(e)}));
+  const kinds = {};
+  for(const e of (ev.events||[])){ const k = e.action && e.action.kind; kinds[k] = (kinds[k]||0)+1; }
+  p('events stateSeq=' + ev.stateSeq + ' total=' + (ev.events||[]).length + ' kinds=' + JSON.stringify(kinds));
+  p('guestG ' + (B.state() ? JSON.stringify(B.state().players.map(x=>[x.name, x.isLocal])) : 'null'));
+  p('guestAskBox ' + (fB.contentDocument.getElementById('netAsk') ? 'exists' : 'none'));
+  dump();
+}
+
+function dump(){
+  const el = document.getElementById('results');
+  if(errs.length){ out.push('--- errors ---'); errs.slice(0,6).forEach(x=>out.push(String(x).slice(0,300))); }
+  el.textContent = out.join(String.fromCharCode(10));
+  document.title = 'DBG-DONE';
+}
+</script>
+</body></html>

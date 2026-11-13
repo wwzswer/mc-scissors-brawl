@@ -332,6 +332,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#0d1219;padding:1px 
           <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <button class="btn small" id="checkUpdBtn">🔄 检查更新</button>
             <span id="verInfo" style="font-size:12px;color:var(--dim)"></span>
+            <button class="btn small" id="diagBtn">📱 设备诊断</button>
           </div>
           <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <button class="btn small" id="clearProgBtn">🧹 清除进度存档</button>
@@ -3353,7 +3354,7 @@ function renderPlayers(){
         <span class="name">${p.name}</span>
         <span class="tag ${p.isHuman?'you':'ai'}">${p.isHuman?'玩家':(p.isEnemy?'AI 敌人':'AI 队友')}</span>
         ${(()=>{ const c = TEAM_COLORS[p.team|0] || TEAM_COLORS[0];
-          const rel = p.isHuman ? '你' : (p.isEnemy ? '敌方' : '队友');
+          const rel = p.isLocal ? '你' : (p.isHuman ? (p.team === (G.players.find(q=>q.isLocal)||{}).team ? '队友' : '敌方') : (p.isEnemy ? '敌方' : '队友'));
           return `<span class="tchip" style="background:${c.bg};color:${c.fg}">队伍${teamLetter(p.team)} · ${rel}</span>`; })()}
         ${p.isHuman ? '' : `<span class="pill" title="这名 AI 的强度">🤖 ${(DIFFS[p.diff]||DIFFS[diffKey]).label}</span>`}
         ${p.inWater?'<span class="pill water">💧 水中</span>':''}
@@ -3421,6 +3422,7 @@ const TEAM_COLORS = [
 ];
 const MAX_ROSTER = 6;
 let roster = [];                          /* 当前名单（会存进 mcSettings） */
+let netMultiHuman = false;                /* 联机对局中：允许多个真人（由座位决定） */
 
 function teamLetter(t){ return TEAM_LETTERS[Math.max(0,Math.min(3, (t|0)))]; }
 function teamChipHTML(t){
@@ -3461,8 +3463,11 @@ function normalizeRoster(list){
   if(!src.length){ src = defaultRoster(gameMode, enemyCount); notes.push('名单为空，已生成默认名单'); }
 
   let humans = src.filter(x=>x.human).length;
+  /* 联机对局里每个真人座位都是一个玩家，不能被"只能 1 个玩家"的规则改掉
+     （注意：不能用 typeof NetPlay —— const 在初始化前会抛 TDZ） */
+  const multiHumanOk = netMultiHuman === true;
   if(humans === 0){ src[0].human = true; humans = 1; notes.push('名单里没有玩家，已把第 1 位设成你'); }
-  if(humans > 1){
+  if(humans > 1 && !multiHumanOk){
     let kept = false;
     for(const x of src) if(x.human){ if(kept) x.human = false; else kept = true; }
     notes.push('只能有 1 名玩家，其余已改成机器人');
@@ -3852,6 +3857,7 @@ function refreshProgInfo(){
   }catch(e){ el.textContent = ''; }
 }
 on('checkUpdBtn', ()=>{ try{ sfx.click(); }catch(e){} checkUpdate(true); });
+on('diagBtn', ()=>{ try{ sfx.click(); }catch(e){} showDiag(); });
 on('clearProgBtn', ()=>{
   try{ sfx.click(); }catch(e){}
   localStorage.removeItem('mcProg');
@@ -4123,6 +4129,7 @@ const Net = {
     const code = this.code, me = this.youId;
     this.stop();
     this.active = false; this.started = false; this.spectating = false; this.launched = false;
+    netMultiHuman = false;
     this.slots = []; this.seats = []; this.code = null; this.snapshot = null;
     try{ sfx.click(); }catch(e){}
     if(code) this.api('/api/room/'+code+'/leave', {id:me}).catch(()=>{});
@@ -4239,23 +4246,32 @@ function netOptionList(p){
 }
 async function netRemoteTurn(p){
   let guard = 0;
-  while(p.alive && !G.over && guard++ < 40){
+  const avoid = new Set();       /* 试过但做不成的选项，别让它无限重问 */
+  while(p.alive && !G.over && guard++ < 12){
     if(G.turnSpent >= 8) break;
-    const list = netOptionList(p);
+    const all = netOptionList(p);
+    const list = all.filter(x=>!avoid.has(x.label));
+    if(!list.length){
+      log(`💤 ${lname(p)} 没有可做的行动了。`, 'l-sys');
+      await netAskSeat(p, 'act', []).catch(()=>{});   /* 告诉他"只能结束" */
+      return true;
+    }
     const ans = await netAskSeat(p, 'act', list);
     setNetWaitHint('');
     if(!ans){ log(`⌛ ${lname(p)} 太久没回应，跳过他的行动。`, 'l-warn'); return false; }
     if(ans.pass) return true;
-    const item = list.find(x=>x.id === ans.id);
+    const item = list.find(x=>x.id === ans.id) || all.find(x=>x.id === ans.id);
     if(!item) continue;
+    let ok = true;
     try{
       if(item.shop){
         if(item.shop.type === 'armorPriority') setArmorPriority(p, item.shop.key);
-        else applyShopAction(p, item.shop);
+        else ok = applyShopAction(p, item.shop) !== false;
       }else{
-        await runAction(p, item.opt);
+        ok = (await runAction(p, item.opt)) !== false;
       }
-    }catch(e){ log('（远端动作执行出错：' + (e && e.message) + '）', 'l-warn'); }
+    }catch(e){ ok = false; log('（远端动作执行出错：' + (e && e.message) + '）', 'l-warn'); }
+    if(!ok){ avoid.add(item.label); log(`（这一步「${item.label}」现在做不了，已跳过）`, 'l-warn'); }
     renderAll();
   }
   return true;
@@ -4530,6 +4546,7 @@ function netOnRoomStarted(){
   }
   Net.launched = true;
   Net.spectating = false;
+  netMultiHuman = true;                    /* 这一局允许多个真人 */
   NetPlay.role = Net.isHost() ? 'host' : 'guest';
   try{
     const raw = netRosterFromRoom();
@@ -4876,6 +4893,43 @@ function applyUpdate(){
     document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checkUpdate(false); });
   }catch(e){}
 })();
+
+/* ---------------- 设备诊断：真机反馈问题时报这串就够了 ---------------- */
+function showDiag(){
+  try{
+    const cs = getComputedStyle(document.documentElement);
+    const safeTop = cs.getPropertyValue('--sat') || '';
+    const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+    const ua = navigator.userAgent || '';
+    const lines = [
+      '视口：' + window.innerWidth + '×' + window.innerHeight + '（DPR ' + (window.devicePixelRatio||1) + '）',
+      '屏幕：' + (screen.width||0) + '×' + (screen.height||0) + ' 可用 ' + (screen.availWidth||0) + '×' + (screen.availHeight||0),
+      '运行方式：' + (standalone ? '独立窗口（PWA/APK）' : '浏览器标签') + (location.protocol === 'file:' ? ' · file://' : ''),
+      '地址：' + location.origin,
+      '版本：v' + APP_VERSION,
+      '安全区（env）：' + (safeTop || '未提供'),
+      'UA：' + ua.slice(0, 140),
+    ];
+    const ov = document.getElementById('overlay');
+    const box = document.getElementById('overlayBox');
+    if(ov && box){
+      box.innerHTML = '<h3 style="font-size:17px;margin:0 0 8px">📱 设备诊断</h3>' +
+        '<div style="font-size:12px;line-height:1.9;text-align:left;color:var(--dim);word-break:break-all">' +
+        lines.map(x=>esc(x)).join('<br>') + '</div>' +
+        '<div class="row" style="justify-content:center;margin-top:12px">' +
+        '<button class="btn small pri" id="diagCopy">复制</button>' +
+        '<button class="btn small" id="diagClose">关闭</button></div>';
+      ov.classList.remove('hidden');
+      const c = document.getElementById('diagCopy');
+      if(c) c.onclick = ()=>{ copyText(lines.join('\n')); appToast('诊断信息已复制'); };
+      const cl = document.getElementById('diagClose');
+      if(cl) cl.onclick = ()=>{ ov.classList.add('hidden'); };
+      return;
+    }
+    copyText(lines.join('\n'));
+    appToast('已复制诊断信息');
+  }catch(e){}
+}
 
 /* =========================================================================
    PWA：装到桌面 / 开始菜单，像 App 一样打开（离线也能玩单机）

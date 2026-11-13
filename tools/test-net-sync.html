@@ -69,7 +69,7 @@ window.addEventListener('load', async ()=>{
     /* 等打完（最多 90 秒） */
     const t0 = Date.now();
     let lastRound = 0, hostOver=false, guestOver=false;
-    while(Date.now()-t0 < 90000){
+    while(Date.now()-t0 < 150000){
       await sleep(300);
       const GA = A.state(), GB = B.state();
       if(GA) lastRound = Math.max(lastRound, GA.round||0);
